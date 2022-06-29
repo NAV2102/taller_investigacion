@@ -1,0 +1,114 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+import rospy
+import numpy as np
+from functions import *
+from proyecto.msg import PersonConfig
+from sensor_msgs.msg import LaserScan
+
+class Lidar(object):
+    def __init__(self):
+        # Crear el suscriptor al tópico del LiDAR
+        topic = 'second_robot/scan'
+        self.pub = rospy.Subscriber(topic, LaserScan, self.callback)
+        self.lid = LaserScan()
+        
+        # Esperar 1 segundo
+        rospy.sleep(1)
+        
+        # Precalcular un vector que contenga los ángulos para cada rango.
+        a_min = self.lid.angle_min
+        a_max = self.lid.angle_max
+        a_inc = self.lid.angle_increment
+        self.ang = np.arange(a_min,a_max,a_inc)
+
+        # Almacenar los rangos máximo y mínimo que puede leer el LiDAR
+        self.rmin = self.lid.range_min
+        self.rmax = self.lid.range_max
+
+
+    def callback(self, msg):
+        # Callback para el suscriptor
+        self.lid = msg
+
+        
+    def get_med_ang(self):
+        """ Retorna los valores de la medición y sus ángulos
+            respectivos en el sistema del LiDAR
+        """
+        # Obtener los rangos medidos
+        rangos = self.lid.ranges
+        # Asignar el limite de rangos medidos
+        lim_r  = 3.0
+        
+        ang = []; med = []
+        # Mantener los rango entre 0 a 2pi radianes
+        # Limitar los rangos a lim_r
+        for i in range(len(rangos)//2):
+            
+            ang.append(self.ang[i])
+            if rangos[i]<=lim_r:
+                med.append(rangos[i])
+            elif rangos[i]>lim_r:
+                med.append(lim_r)
+
+        return med,ang
+
+
+# Inicializar el nodo
+rospy.init_node('nodo_person_config')
+
+# Declarar del publicador
+topic = 'person_config'
+pub = rospy.Publisher(topic, PersonConfig, queue_size=10)
+
+#fpos = open("../texto/pos.dat", "w")
+
+# Objeto que lee el escaneo
+lidar = Lidar()
+
+# Creación de una instancia (vacía) del mensaje
+person_config_msg = PersonConfig()
+
+# Asignar los valores de la medicion anterior
+med_0, ang = lidar.get_med_ang()
+
+# Tiempo de ejecución del bucle (en Hz)
+freq = 20
+dt = 1.0/freq
+rate = rospy.Rate(freq)
+t = 0.0
+while not rospy.is_shutdown():
+    # Lectura de los valores de medidas y angulos
+    med, ang = lidar.get_med_ang()
+    ang = (np.array(ang)[::-1]).tolist()
+    # Obtener la medicion filtrada
+    med_f = lidar_filter(med,med_0,0.75)
+    # Actualizar la medicion anterior
+    med_0 = med
+    
+    # Obtener la posición de la persona
+    pos_person = person_pos_xy(med_f, ang)
+    
+    #fpos.write(str(t)+' '+str(pos_person[0])+' '+str(pos_person[1])+'\n')
+    
+    # Asignar los valores en el mensaje
+    person_config_msg.med        = np.round(med, 3)
+    person_config_msg.med_f      = np.round(med_f, 3)
+    person_config_msg.ang        = np.round(ang, 3)
+    person_config_msg.pos_person = np.round(pos_person, 3)
+    
+    t = t + dt
+    
+    # Publicar el mensaje
+    pub.publish(person_config_msg)
+    
+    #if t >= 30:
+    #    break
+    
+    # Esperar
+    rate.sleep()
+
+#fpos.close()

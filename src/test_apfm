@@ -1,0 +1,226 @@
+#!/usr/bin/env python
+
+import os
+import sys
+
+if 'ROS_NAMESPACE' not in os.environ:
+    # Default namespace if not set
+    # Note, didn't need to check sys.argv for `__ns:=...`,
+    # it seems __ns:= takes precidence over ROS_NAMESPACE
+
+    os.environ['ROS_NAMESPACE'] = '/first_robot/arm_controller'
+
+
+import time
+import roslib; roslib.load_manifest('ur_driver')
+import rospy
+import actionlib
+import numpy as np
+from functions import *
+
+from sensor_msgs.msg import JointState
+from proyecto.msg import PersonConfig
+from proyecto.msg import DistMin
+from proyecto.msg import APFM
+from control_msgs.msg import *
+from trajectory_msgs.msg import *
+
+pi = np.pi
+
+#----------------------------------------------
+# Definir las clases de los suscriptores
+#----------------------------------------------
+
+class PosPerson(object):
+    def __init__(self):
+        topic    = 'person_config'
+        self.pub = rospy.Subscriber(topic, PersonConfig, self.callback)
+        self.pperson = PersonConfig()
+        
+    def callback(self, msg):
+        self.pperson = msg
+        
+    def get_pperson(self):
+        # Obtener la posicion de la capsula de la persona en el
+        # espacio cartesiano
+        pos = self.pperson.pos_person
+        if len(pos) < 6:
+            u = 0
+        else:
+            u = 1
+        p_pos1 = np.array(pos[0:3])
+        p_pos2 = np.array(pos[3:6])
+        return p_pos1, p_pos2, u
+
+
+class PosRobot(object):
+    def __init__(self):
+        topic    = 'first_robot/joint_states'
+        self.pub = rospy.Subscriber(topic, JointState, self.callback)
+        self.probot = JointState()
+        
+    def callback(self, msg):
+        self.probot = msg
+        
+    def get_q(self):
+        # Obtener la configuracion del robot
+        q_rob = self.probot.position
+        q = np.zeros(6)
+        if len(q_rob) < 5:
+            u = 0
+        else:
+            q[0] = q_rob[2]
+            q[1] = q_rob[1]
+            q[2] = q_rob[0]
+            q[3] = q_rob[3]
+            q[4] = q_rob[4]
+            q[5] = q_rob[5]
+            u = 1
+        return q, u
+
+class MinDist(object):
+    def __init__(self):
+        topic    = 'dist_min'
+        self.pub = rospy.Subscriber(topic, DistMin, self.callback)
+        self.dmin = DistMin()
+        
+    def callback(self, msg):
+        self.dmin = msg
+        
+    def get_rs(self):
+        d_min = self.dmin.min_dist
+        r1 = self.dmin.r1
+        r2 = self.dmin.r2
+        cp = self.dmin.p
+        d_min = np.array(d_min)
+        r1 = np.array(r1)
+        r2 = np.array(r2)
+        cp = np.array(cp)
+        print(r1, r2)
+        if len(r1)<3 or len(r2)<3:
+            u = 0
+        else:
+            u = 1
+        return d_min, r1, r2, cp, u
+
+        
+if __name__ == '__main__':    
+    rospy.init_node('test_apfm_node')
+      
+    joint_names = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
+    
+    pos_person = PosPerson()
+    pos_robot  = PosRobot()
+    mini_dist   = MinDist()
+    
+    q_des = np.array([-pi/2, -1.0, 1.7, -2.2, -1.6, 0.0])
+    xdes = ur5_fkine(q_des)[0:3,3]
+    
+    #--------------------------------------------
+    # AGREGADO DE TEST GAZEBO
+    robot_client = actionlib.SimpleActionClient('follow_joint_trajectory', FollowJointTrajectoryAction)
+
+    print("Waiting for server...")
+    robot_client.wait_for_server()
+    print("Connected to server")
+    
+    g = FollowJointTrajectoryGoal()
+    g.trajectory = JointTrajectory()
+    g.trajectory.joint_names = joint_names
+    #--------------------------------------------
+    
+    topic = 'apfm_control'
+    pub = rospy.Publisher(topic, APFM, queue_size=10)
+    qAPFM = APFM()
+    
+    # Initial position
+    #----------------------------------------
+    # AGREGADO DE TEST GAZEBO
+    Q0 = [0.0, -1.0, 1.7, -2.2, -1.6, 0.0]
+    g.trajectory.points = [ JointTrajectoryPoint(positions=Q0, velocities=[0]*6,time_from_start=rospy.Duration(2.0))]
+    robot_client.send_goal(g)
+    robot_client.wait_for_result()
+    rospy.sleep(1)
+    #----------------------------------------
+    
+    # Variables
+    dcr = 0.25
+    d0  = 0.3
+    k1  = 1
+    Kp  = 1*np.array([1, 1, 1])
+    Ki  = 0.1*np.array([1, 1, 1])
+    I0 = np.array([0, 0, 0])
+    e0 = np.array([0, 0, 0])
+    Id = 1*np.eye(3)
+    
+    freq = 20
+    dt = 1.0/freq
+    rate = rospy.Rate(freq)
+    t = 0
+    
+    while not rospy.is_shutdown():
+        
+        robot_client.cancel_goal()
+        
+        # Obtener la position en el espacio cartesiano de la 
+        # persona y el robot
+        p_pos1, p_pos2, u1 = pos_person.get_pperson()
+        q, u2 = pos_robot.get_q()
+        dmin, r1, r2, cp, u3 = mini_dist.get_rs()
+        print(u1,u2,u3)
+        if u1==1 and u2==1 and u3 == 1: 
+            
+            # Calculo de los vectores de repulsion            
+            s = (r1 - r2)/np.linalg.norm(r1-r2)
+            if dmin - dcr < d0:
+                vrep1 = k1*(d0/(dmin-dcr)-1)
+            else:
+                vrep1 = 0
+            vrep2 = 0
+            
+            vrep = vrep1 + vrep2
+            vrep = vrep*s
+            
+            # Calculo de los vectores de atraccion
+            x = ur5_fkine(q)[0:3,3]
+            e = x - xdes
+            P = -Kp.dot(e)
+            if dmin - dcr > d0:
+                I = I0 - Ki.dot(e0 + dt*e)
+            else:
+                I = I0
+            I0 = I
+            e0 = e
+            
+            beta = 2/(1+np.exp(-np.power((dmin-dcr)/d0,2))) - 1
+            vatt = beta*(P+I)
+            
+            # Calculo de las velocidades articulares
+
+            Jcp = jacobian(q,int(cp))
+            JcpT = np.transpose(Jcp)
+            dqrep = JcpT.dot(np.linalg.inv(Jcp.dot(JcpT)+Id)).dot(vrep)
+            
+            Je = jacobian(q,6)
+            JeT = np.transpose(Je)
+            dqatt = JeT.dot(np.linalg.inv(Je.dot(JeT)+Id)).dot(vatt)
+            dqtotal = dqatt + dqrep
+            qtotal = q + dt*dqtotal
+            qtotal = q_lim(qtotal)
+            #print(qtotal)
+            #print(np.round(qtotal,3))
+            qAPFM.q_total = qtotal
+            qAPFM.dq_total = dqtotal
+            
+            g.trajectory.points = [ JointTrajectoryPoint(positions=qtotal.tolist(), velocities=dqtotal.tolist(), time_from_start=rospy.Duration(dt))]
+            robot_client.send_goal(g)
+            robot_client.wait_for_result()
+
+        t = t+dt
+        pub.publish(qAPFM)
+        rate.sleep()
+        
+    robot_client.cancel_goal()
+    
+        
+

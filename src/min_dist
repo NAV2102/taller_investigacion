@@ -1,0 +1,151 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import rospy
+import numpy as np
+from functions import *
+
+from sensor_msgs.msg import JointState
+from proyecto.msg import PersonConfig
+from proyecto.msg import DistMin
+
+pi = np.pi
+
+class PosPerson(object):
+    def __init__(self):
+        topic    = 'person_config'
+        self.pub = rospy.Subscriber(topic, PersonConfig, self.callback)
+        self.pperson = PersonConfig()
+        
+    def callback(self, msg):
+        self.pperson = msg
+        
+    def get_pos_person(self):
+        # Obtener la posicion de la capsula de la persona en el
+        # espacio cartesiano
+        pos = self.pperson.pos_person
+        if len(pos) < 6:
+            u = 0
+        else:
+            u = 1
+        p_pos1 = np.array(pos[0:3])
+        p_pos2 = np.array(pos[3:6])
+        return p_pos1, p_pos2, u
+
+
+class PosRobot(object):
+    def __init__(self):
+        topic    = 'first_robot/joint_states'
+        self.pub = rospy.Subscriber(topic, JointState, self.callback)
+        self.probot = JointState()
+        
+    def callback(self, msg):
+        self.probot = msg
+        
+    def get_pos_robot(self):
+        # Obtener la configuracion del robot
+        q_rob = self.probot.position
+        q = np.zeros(6)
+        if len(q_rob) < 5:
+            u = 0
+        else:
+            q[0] = q_rob[2]
+            q[1] = q_rob[1]
+            q[2] = q_rob[0]
+            q[3] = q_rob[3]
+            q[4] = q_rob[4]
+            q[5] = q_rob[5]
+            u = 1
+        # Obtener la posicion de las articulaciones en el espacio 
+        # cartesiano
+        pos = positions_robot(q)
+        r_pos1 = pos[0:3,0]
+        r_pos2 = pos[0:3,1]
+        r_pos3 = pos[0:3,2]
+        r_pos4 = pos[0:3,3]
+        r_pos5 = pos[0:3,4]
+        r_pos6 = pos[0:3,5]
+        return r_pos1, r_pos2, r_pos3, r_pos4, r_pos5, r_pos6, u
+
+ 
+        
+if __name__ == '__main__':    
+    rospy.init_node('min_dist_node')
+    
+    pos_person = PosPerson()
+    pos_robot = PosRobot()
+    
+    # Declarar del publicador
+    topic = 'dist_min'
+    pub = rospy.Publisher(topic, DistMin, queue_size=10)
+    dist_min_msg = DistMin()
+    
+    freq = 20
+    dt = 1.0/freq
+    rate = rospy.Rate(freq)
+
+    while not rospy.is_shutdown():
+        
+        # Obtener la position en el espacio cartesiano de la 
+        # persona y el robot
+        p_pos1, p_pos2, u1 = pos_person.get_pos_person()
+        r_pos1, r_pos2, r_pos3, r_pos4, r_pos5, r_pos6, u2 = pos_robot.get_pos_robot()
+
+        if u1==1 and u2==1: 
+            # Definir las capsulas
+            cap_person = Capsule(p_pos1, p_pos2, 0.35)
+            cap_1      = Capsule(r_pos5, r_pos6, 0.1)
+            cap_2      = Capsule(r_pos4, r_pos5, 0.1)
+            cap_3      = Capsule(r_pos3, r_pos4, 0.1)
+            
+            # Actualizar la posicion de las capsulas
+            cap_person.send_positions(p_pos1, p_pos2)
+            cap_1.send_positions(r_pos5, r_pos6)
+            cap_2.send_positions(r_pos4, r_pos5)
+            cap_3.send_positions(r_pos3, r_pos4)
+
+            # Calcular la distancia minima entre capsulas
+            umin1, dmin1 = QR_min_dist(cap_person, cap_1)
+            umin2, dmin2 = QR_min_dist(cap_person, cap_2)
+            umin3, dmin3 = QR_min_dist(cap_person, cap_3)
+            dmin1 = np.power(dmin1,0.5)
+            dmin2 = np.power(dmin2,0.5)
+            dmin3 = np.power(dmin3,0.5)
+            Dmin = np.array([dmin1, dmin2, dmin3])
+            #print("dmin1: ",np.round(dmin1,3)," dmin2: ",np.round(dmin2,3)," dmin3: ",np.round(dmin3,3))
+            if np.argmin(Dmin) == 0:
+                dmin = dmin1
+                r1, r2, xmin = segment_capsule(cap_person, cap_1, umin1)
+                if xmin[1] < 0.5:
+                    p = 5
+                else:
+                    p = 6
+            elif np.argmin(Dmin) == 1:
+                dmin = dmin2
+                r1, r2, xmin = segment_capsule(cap_person, cap_2, umin2)
+                if xmin[1] < 0.5:
+                    p = 4
+                else:
+                    p = 5
+            else:
+                dmin = dmin3
+                r1, r2, xmin = segment_capsule(cap_person, cap_3, umin3)
+                if xmin[1] < 0.5:
+                    p = 3
+                else:
+                    p = 4
+            #print("dmin: ",dmin)
+            #print("r1: ",r1)
+            #print("r2: ",r2)
+            #print("----------------------------------------")
+            dist_min_msg.min_dist = [dmin]
+            dist_min_msg.r1 = r1.tolist()
+            dist_min_msg.r2 = r2.tolist()
+            dist_min_msg.p = [p]
+        pub.publish(dist_min_msg)
+        rate.sleep()
+        
+    
+    
+        
+

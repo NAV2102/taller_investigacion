@@ -1,0 +1,60 @@
+#!/usr/bin/env python
+
+import rospy
+from sensor_msgs.msg import JointState
+
+from markers import *
+from functions import *
+
+rospy.init_node("testForwardKinematics")
+#pub = rospy.Publisher('joint_states', JointState, queue_size=1000)
+pub = rospy.Publisher('first_robot/joint_states', JointState, queue_size=1000)
+marker1 = BallMarker(color['GREEN'])
+marker2 = BallMarker(color['GREEN'])
+marker3 = BallMarker(color['GREEN'])
+marker4 = BallMarker(color['GREEN'])
+marker5 = BallMarker(color['GREEN'])
+marker6 = BallMarker(color['GREEN'])
+
+# Joint names
+jnames = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint','wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
+# Joint Configuration
+q = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+# End effector with respect to the base
+#T = ur5_fkine(q)
+pos = positions_robot(q)
+marker1.xyz(pos[0:3,0])
+marker2.xyz(pos[0:3,1])
+marker3.xyz(pos[0:3,2])
+marker4.xyz(pos[0:3,3])
+marker5.xyz(pos[0:3,4])
+marker6.xyz(pos[0:3,5])
+#print(pos[0:3,2])
+#print(pos[0:3,3])
+#print(pos[0:3,4])
+#print(pos[0:3,5])
+# Object (message) whose type is JointState
+jstate = JointState()
+# Set values to the message
+jstate.header.stamp = rospy.Time.now()
+jstate.name = jnames
+# Add the head joint value (with value 0) to the joints
+jstate.position = q
+
+# Loop rate (in Hz)
+rate = rospy.Rate(100)
+# Continuous execution loop
+while not rospy.is_shutdown():
+    # Current time (needed for ROS)
+    jstate.header.stamp = rospy.Time.now()
+    # Publish the message
+    pub.publish(jstate)
+    marker1.publish()
+    marker2.publish()
+    marker3.publish()
+    marker4.publish()
+    marker5.publish()
+    marker6.publish()
+    # Wait for the next iteration
+    rate.sleep()
