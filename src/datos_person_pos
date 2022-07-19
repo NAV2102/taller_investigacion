@@ -1,0 +1,61 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+import rospy
+import numpy as np
+from functions import *
+from proyecto.msg import PersonConfig
+
+class PosPerson(object):
+    def __init__(self):
+        topic    = 'person_config'
+        self.pub = rospy.Subscriber(topic, PersonConfig, self.callback)
+        self.pperson = PersonConfig()
+        
+    def callback(self, msg):
+        self.pperson = msg
+        
+    def get_pos_person(self):
+        # Obtener la posicion de la capsula de la persona en el
+        # espacio cartesiano
+        ang = self.pperson.ang
+        med = self.pperson.med
+        med_f = self.pperson.med_f
+        pos = self.pperson.pos_person
+        if len(pos) < 6:
+            u = 0
+        else:
+            u = 1
+        return ang,med,med_f,pos, u
+        
+if __name__ == '__main__':    
+    rospy.init_node('toma_datos')
+    
+    pos_person = PosPerson()
+    
+    fppos = open("/home/nicolas/catkin_ws/src/proyecto/texto/ppos.dat", "w")
+    fppos.write("Tiempo"+'|'+"Ang"+'|'+"Med"+'|'+"Medf"+'|'+"PosX"+'|'+"PosY"+'\n')
+    
+    freq = 100
+    dt = 1.0/freq
+    rate = rospy.Rate(freq)
+    
+    t = 0 - dt
+    
+    while not rospy.is_shutdown():
+        
+        # Obtener la position en el espacio cartesiano de la 
+        # persona y el robot
+        ang,med,med_f,pos, u = pos_person.get_pos_person()
+        
+        if u == 1:
+            fppos.write(str(t)+'|'+str(ang)+'|'+str(med)+'|'+str(med_f)+'|'+str(pos[0])+'|'+str(pos[1])+'\n')
+        
+        t = t + dt
+        
+        if t >= 5:
+            break
+        
+        rate.sleep()
+    fppos.close()

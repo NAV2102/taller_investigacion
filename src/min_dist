@@ -35,7 +35,8 @@ class PosPerson(object):
 
 class PosRobot(object):
     def __init__(self):
-        topic    = 'first_robot/joint_states'
+        #topic    = 'first_robot/joint_states'
+        topic    = 'joint_states'
         self.pub = rospy.Subscriber(topic, JointState, self.callback)
         self.probot = JointState()
         
@@ -80,7 +81,7 @@ if __name__ == '__main__':
     pub = rospy.Publisher(topic, DistMin, queue_size=10)
     dist_min_msg = DistMin()
     
-    freq = 20
+    freq = 100
     dt = 1.0/freq
     rate = rospy.Rate(freq)
 
@@ -116,6 +117,7 @@ if __name__ == '__main__':
             if np.argmin(Dmin) == 0:
                 dmin = dmin1
                 r1, r2, xmin = segment_capsule(cap_person, cap_1, umin1)
+                dmin = np.linalg.norm(r1-r2)
                 if xmin[1] < 0.5:
                     p = 5
                 else:
@@ -123,6 +125,7 @@ if __name__ == '__main__':
             elif np.argmin(Dmin) == 1:
                 dmin = dmin2
                 r1, r2, xmin = segment_capsule(cap_person, cap_2, umin2)
+                dmin = np.linalg.norm(r1-r2)
                 if xmin[1] < 0.5:
                     p = 4
                 else:
@@ -130,6 +133,7 @@ if __name__ == '__main__':
             else:
                 dmin = dmin3
                 r1, r2, xmin = segment_capsule(cap_person, cap_3, umin3)
+                dmin = np.linalg.norm(r1-r2)
                 if xmin[1] < 0.5:
                     p = 3
                 else:

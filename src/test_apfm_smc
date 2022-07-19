@@ -8,6 +8,7 @@ import actionlib
 import numpy as np
 from functions import *
 from markers import *
+from roslib import packages
 
 from sensor_msgs.msg import JointState
 from proyecto.msg import PersonConfig
@@ -16,6 +17,7 @@ from proyecto.msg import APFM
 from control_msgs.msg import *
 from trajectory_msgs.msg import *
 
+import rbdl
 pi = np.pi
 
 #----------------------------------------------
@@ -41,7 +43,7 @@ class PosPerson(object):
         p_pos2 = np.array(pos[3:6])
         return p_pos1, p_pos2, u
 
-
+"""
 class PosRobot(object):
     def __init__(self):
         topic    = 'joint_states'
@@ -73,7 +75,7 @@ class PosRobot(object):
             dq[5] = dq_rob[5]
             u = 1
         return q, dq, u
-
+"""
 class MinDist(object):
     def __init__(self):
         topic    = 'dist_min'
@@ -104,11 +106,11 @@ if __name__ == '__main__':
     #----------------------------------------------
     
     # Inicializar el nodo
-    rospy.init_node('test_apfm_node')
+    rospy.init_node('test_apfm_smc_node')
       
     # Crear los suscriptores
     pos_person = PosPerson()
-    pos_robot  = PosRobot()
+    #pos_robot  = PosRobot()
     mini_dist  = MinDist()
     
     # Crear marcadores para RVIZ
@@ -119,6 +121,10 @@ if __name__ == '__main__':
     
     # Archivos donde se guardaran los datos
     fdatos = open("/home/nicolas/catkin_ws/src/proyecto/texto/datos.dat", "w")
+    
+    # Modelo RBDL
+    modelo = rbdl.loadModel('/home/nicolas/catkin_ws/src/proyecto/urdf/ur5_robot.urdf')
+    ndof   = modelo.q_size     # Grados de libertad
     
     # Conectar con el robot
     robot_client = actionlib.SimpleActionClient('/arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
@@ -142,16 +148,24 @@ if __name__ == '__main__':
     # Parametros de control APFM
     dcr = 0.45
     d1  = 0.7
-    cv = 0.05
+    cv  = 0.05
     k1  = 0.2
     k2  = 0.1
     l1  = 0.3
     l2  = 0.6
-    Kp  = 3*np.diag([2, 1, 1])
+    Kp  = 3*np.diag([3, 1, 1])
     Ki  = 0.5*np.diag([1, 1, 1])
-    I0 = np.array([0, 0, 0])
-    e0 = np.array([0, 0, 0])
-    Id = 0.5*np.eye(3)
+    I0  = np.array([0, 0, 0])
+    e0  = np.array([0, 0, 0])
+    Id  = 0.5*np.eye(3)
+    # Se definen las ganancias del controlador
+    n     = 0.1*np.array([200.0, 50.0, 10.0, 50.0, 50.0, 1.0])
+    lamb  = 20*np.diag([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+    alpha = 0.2
+    u     = np.zeros(ndof)          # Reemplazar por la ley de control
+    b     = np.zeros(ndof)          # Para el vector de efectos no lineales
+    H     = np.zeros([ndof, ndof])  # Para la matriz de inercia
+    H0    = np.zeros([ndof, ndof])
     
     # Parametros para el cambio de control
     t_s = 8
@@ -164,6 +178,11 @@ if __name__ == '__main__':
     rate = rospy.Rate(freq)
     t = 0
     
+    # Simulador dinamico del robot
+    robot = Robot(np.array(Q0), np.array([0.0]*6), ndof, dt)
+    q  = robot.read_joint_positions()
+    rbdl.CompositeRigidBodyAlgorithm(modelo,q,H0)
+    
     fdatos.write("Tiempo"+' '+"PosX"+' '+"PosY"+' '+"PosZ"+' '+ "DesX"+' '+"DesY"+' '+"DesZ"+' '+"VelX"+' '+"VelY"+' '+"VelZ"+' '+"Dmin"+'\n')
     
     while not rospy.is_shutdown():
@@ -171,23 +190,29 @@ if __name__ == '__main__':
         robot_client.cancel_goal()
         
         # Trayectoria predeterminada        
-        mov = pi/2*np.cos(pi*t/t_s) - pi/2       
+        mov = pi/2*np.cos(pi*t/8) - pi/2  
+        dmov = -np.sin(pi*t/8)*pi*pi/16 
+        ddmov = -np.cos(pi*t/8)*pi*pi*pi/128    
         q_des = np.array([mov, -0.5, 0.8, -2.2, -1.6, 0.0])
+        dq_des = np.array([dmov, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ddq_des = np.array([ddmov, 0.0, 0.0, 0.0, 0.0, 0.0])
         xdes = ur5_fkine(q_des)[0:3,3] 
-        q_mov = q_des.tolist()
-        dq_mov = [0]*6       
+        #q_mov = q_des.tolist()
+        #dq_mov = [0]*6       
                 
         # Leer los valores de los suscriptores
         p_pos1, p_pos2, u1 = pos_person.get_pperson()
-        q, dq, u2 = pos_robot.get_q()
+        #q, dq, u2 = pos_robot.get_q()
         dmin, r2, r1, cp, u3 = mini_dist.get_rs()
         #r2 = np.array([0.0, 1, r2[2]])
-        #r2[1] = r2[1]-0.5
         #dmin = np.linalg.norm(r1-r2)
+        
+        q  = robot.read_joint_positions()
+        dq = robot.read_joint_velocities()
 
         # No se realizará acción si no se recibe uno de
         # los mensajes
-        if u1==1 and u2==1 and u3 == 1: 
+        if u1==1 and u3 == 1: 
             
             x = ur5_fkine(q)[0:3,3]
             Je = jacobian(q,6)
@@ -254,17 +279,50 @@ if __name__ == '__main__':
                 qtotal = q + dt*dqtotal
                 qtotal = q_lim(qtotal)             
                 
-                q_mov = qtotal.tolist()
-                dq_mov = dqtotal.tolist()             
+                q_mov = qtotal
+                dq_mov = dqtotal
+                ddq_mov = np.array([0.0]*6)             
             
             # Control del robot
             else:
                 
-                q_mov = q_des.tolist()
-                dq_mov = [0]*6
+                q_mov = q_des
+                dq_mov = dq_des
+                ddq_mov = ddq_des
+        
+        q_des = q_mov
+        dq_des = dq_mov
+        ddq_des = ddq_mov
+        
+        # Calcular el error
+        e  =  q - q_des
+        de = dq - dq_des
+        
+        # Superficie de control
+        s = de + lamb.dot(e)
+        
+        rbdl.CompositeRigidBodyAlgorithm(modelo,q,H)
+        rbdl.NonlinearEffects(modelo,q,dq,b)
+        
+        dH = (H-H0)/dt
+        H0 = H
+        
+        k = n + np.absolute(alpha*H.dot(-lamb.dot(de)) + alpha*b + (1-alpha)*dH.dot(dq_des-lamb.dot(e)))
+        
+        u = b + H.dot(ddq_des) - H.dot(lamb).dot(de) - np.multiply(k,sat(s))
+        
+        u[0:3] = np.clip(u[0:3],-150,150)
+        u[3:6] = np.clip(u[3:6],-28,28)
+        
+        # Simulacion del robot
+        robot.send_command(u)
+        
+        # Leer valores del simulador
+        #q  = robot.read_joint_positions()
+        #dq = robot.read_joint_velocities()
         
         # Mover el robot
-        g.trajectory.points = [ JointTrajectoryPoint(positions=q_mov, velocities=dq_mov, time_from_start=rospy.Duration(dt))]
+        g.trajectory.points = [ JointTrajectoryPoint(positions=q, velocities=dq, time_from_start=rospy.Duration(dt))]
         robot_client.send_goal(g)
         robot_client.wait_for_result()
         
@@ -276,7 +334,7 @@ if __name__ == '__main__':
     
     robot_client.cancel_goal()
     fdatos.close()
-  
+
     
     
         

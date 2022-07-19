@@ -14,7 +14,7 @@ class Robot(object):
         self.M = np.zeros([ndof, ndof])
         self.b = np.zeros(ndof)
         self.dt = dt
-        self.robot = rbdl.loadModel('../urdf/ur5_robot2.urdf')
+        self.robot = rbdl.loadModel('/home/nicolas/catkin_ws/src/proyecto/urdf/ur5_robot.urdf')
 
     def send_command(self, tau):
         rbdl.CompositeRigidBodyAlgorithm(self.robot, self.q, self.M)
@@ -30,40 +30,7 @@ class Robot(object):
 
     def read_joint_velocities(self):
         return self.dq
-        
-"""        
-class RobotX(object):
-    def __init__(self, x0, dx0, ndof, dt):
-        self.x = x0    # numpy array (ndof x 1)
-        self.dx = dx0  # numpy array (ndof x 1)
-        self.H = np.zeros([ndof, ndof])
-        self.C = np.zeros([ndof, ndof])
-        self.G = np.zeros(ndof)
-        self.dt = dt
-        self.robot = rbdl.loadModel('../urdf/ur5_robot2.urdf')
-
-    def send_command(self, tau):
-        zeros = np.zeros(ndof)
-        rbdl.CompositeRigidBodyAlgorithm(self.robot, self.q, self.H)
-        rbdl.InverseDynamics(self.robot,self.q,zeros,zeros,self.G)
-        rbdl.InverseDynamics(self.robot,self.q,self.dq,zeros,self.C)
-        self.C = self.C - self.G
-        Hp = J_T.dot(H).dot(JI)
-        Cp = J_T.dot(C).dot(JI) - Hp.dot(dJ).dot(JI)
-        Gp = J_T.dot(G)
-        ddx = np.linalg.inv(Hp).dot(J_T.dot(tau)-Cp-Gp)
-        ddq = np.zeros(6)
-        rbdl.ForwardDynamics(self.robot, self.q, self.dq, tau, ddq)
-        #ddq = np.linalg.inv(self.M).dot(tau-self.b)
-        self.q = self.q + self.dt*self.dq
-        self.dq = self.dq + self.dt*ddq
-
-    def read_joint_positions(self):
-        return self.q
-
-    def read_joint_velocities(self):
-        return self.dq
-"""        
+           
 
 class Capsule(object):
     def __init__(self, p, u, r):
@@ -397,7 +364,7 @@ def person_pos_xy(med, ang):
     med = np.array(med)
     ang = np.array(ang)
     
-    pos,_ = find_peaks(-med,distance=10)
+    pos,_ = find_peaks(-med,distance=17)
     if len(pos) >= 2:
         med_p = med[pos]
         ang_p = ang[pos]
@@ -411,7 +378,7 @@ def person_pos_xy(med, ang):
     x2 = np.array([r2*np.cos(th2)+dist_x, r2*np.sin(th2)+dist_y])
     
     x_person = (x1+x2)/2
-    x_person = np.array([-x_person[0], x_person[1], 0.3, -x_person[0], x_person[1], 2.0])
+    x_person = np.array([x_person[0], x_person[1], 0.3, x_person[0], x_person[1], 2.0])
     x_person = x_person.tolist()
     
     return x_person
@@ -439,11 +406,11 @@ def ley_adap(M,P,dB,alpha):
     
     
 def q_lim(q):
-    q[0] = np.clip(q[0],-2*pi,2*pi)
-    q[1] = np.clip(q[1],-pi/2,pi/2)
-    q[2] = np.clip(q[2],-pi/2,pi/2)
-    q[3] = np.clip(q[3],-2*pi,2*pi)
-    q[4] = np.clip(q[4],-2*pi,2*pi)
+    q[0] = np.clip(q[0],-pi,0)
+    q[1] = np.clip(q[1],-pi,0)
+    q[2] = np.clip(q[2],0,pi/2)
+    q[3] = np.clip(q[3],-5*pi/4,pi/4)
+    q[4] = np.clip(q[4],-pi,0)
     q[5] = np.clip(q[5],-2*pi,2*pi)
     return q
 

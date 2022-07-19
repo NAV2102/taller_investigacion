@@ -1,16 +1,5 @@
 #!/usr/bin/env python
 
-import os
-import sys
-
-if 'ROS_NAMESPACE' not in os.environ:
-    # Default namespace if not set
-    # Note, didn't need to check sys.argv for `__ns:=...`,
-    # it seems __ns:= takes precidence over ROS_NAMESPACE
-
-    os.environ['ROS_NAMESPACE'] = '/first_robot/arm_controller'
-    #os.environ['ROS_NAMESPACE'] = '/arm_controller'
-
 import time
 import roslib; roslib.load_manifest('ur_driver')
 import rospy
@@ -27,7 +16,7 @@ if __name__ == '__main__':
 
     rospy.init_node("control_sliding")
 
-    robot_client = actionlib.SimpleActionClient('follow_joint_trajectory', FollowJointTrajectoryAction)
+    robot_client = actionlib.SimpleActionClient('/arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
     
     print("Waiting for server...")
     robot_client.wait_for_server()
@@ -63,7 +52,8 @@ if __name__ == '__main__':
     goal.trajectory.joint_names = jnames
     
     # Initial position
-    goal.trajectory.points = [ JointTrajectoryPoint(positions=q, velocities=dq,time_from_start=rospy.Duration(2.0))]
+    Q0 = [0, -0.5, 0.8, -2.2, -1.6, 0.0]
+    goal.trajectory.points = [ JointTrajectoryPoint(positions=Q0, velocities=dq,time_from_start=rospy.Duration(2.0))]
     robot_client.send_goal(goal)
     robot_client.wait_for_result()
     rospy.sleep(1)
@@ -73,12 +63,12 @@ if __name__ == '__main__':
     ndof   = modelo.q_size     # Grados de libertad
     
     # Frecuencia del envio (en Hz)
-    freq = 20
+    freq = 50
     dt = 1.0/freq
     rate = rospy.Rate(freq)
     
     # Simulador dinamico del robot
-    robot = Robot(q, dq, ndof, dt)
+    robot = Robot(np.array(Q0), dq, ndof, dt)
     
     # Se definen las ganancias del controlador
     n     = 0.1*np.array([200.0, 50.0, 10.0, 50.0, 50.0, 1.0])
@@ -97,6 +87,13 @@ if __name__ == '__main__':
     
     while not rospy.is_shutdown():
         robot_client.cancel_goal()
+        
+        mov = pi/2*np.cos(pi*t/8) - pi/2  
+        dmov = -np.sin(pi*t/8)*pi*pi/16 
+        ddmov = -np.cos(pi*t/8)*pi*pi*pi/128    
+        q_des = np.array([mov, -0.5, 0.8, -2.2, -1.6, 0.0])
+        dq_des = np.array([dmov, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ddq_des = np.array([ddmov, 0.0, 0.0, 0.0, 0.0, 0.0])
         
         # Leer valores del simulador
         q  = robot.read_joint_positions()
@@ -149,8 +146,8 @@ if __name__ == '__main__':
         
         t = t+dt
     
-        if np.linalg.norm(e)<0.001:
-            break
+        #if np.linalg.norm(e)<0.001:
+         #   break
     
         # Esperar hasta la siguiente  iteracion
         rate.sleep()

@@ -36,7 +36,7 @@ class PosPerson(object):
 
 class PosRobot(object):
     def __init__(self):
-        topic    = 'first_robot/joint_states'
+        topic    = 'joint_states'
         self.pub = rospy.Subscriber(topic, JointState, self.callback)
         self.probot = JointState()
         
@@ -98,7 +98,7 @@ if __name__ == '__main__':
     mr1 = BallMarker(color['RED'], scale=0.1)
     mr2 = BallMarker(color['RED'], scale=0.1)
     
-    rate = rospy.Rate(20)
+    rate = rospy.Rate(100)
 
     while not rospy.is_shutdown():
         
@@ -107,7 +107,7 @@ if __name__ == '__main__':
         p_pos1, p_pos2, u1 = pos_person.get_pperson()
         q, u2 = pos_robot.get_q()
         r1, r2, u3 = min_dist.get_rs()
-        
+        #print(u1,u2,u3)
         if u1==1 and u2==1 and u3 == 1: 
         
             pos = positions_robot(q)
