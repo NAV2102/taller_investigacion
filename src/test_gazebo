@@ -1,15 +1,5 @@
 #!/usr/bin/env python
-"""
-import os
-import sys
 
-if 'ROS_NAMESPACE' not in os.environ:
-    # Default namespace if not set
-    # Note, didn't need to check sys.argv for `__ns:=...`,
-    # it seems __ns:= takes precidence over ROS_NAMESPACE
-
-    os.environ['ROS_NAMESPACE'] = '/first_robot/arm_controller'
-"""
 import time
 import roslib; roslib.load_manifest('ur_driver')
 import rospy
@@ -21,29 +11,11 @@ from proyecto.msg import PersonConfig
 
 pi = np.pi
 
-class PosPerson(object):
-    def __init__(self):
-        topic    = 'person_config'
-        self.pub = rospy.Subscriber(topic, PersonConfig, self.callback)
-        self.pperson = PersonConfig()
-        
-    def callback(self, msg):
-        self.pperson = msg
-        
-    def get_pperson(self):
-        # Obtener la posicion de la capsula de la persona en el
-        # espacio cartesiano
-        pos = self.pperson.pos_person
-        p_pos1 = np.array(pos[0:3])
-        p_pos2 = np.array(pos[3:6])
-        return p_pos1, p_pos2
 
 if __name__ == '__main__':
     
     rospy.init_node("test1")
-    
-    
-    pos_person = PosPerson()
+
     robot_client = actionlib.SimpleActionClient('/arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
 
     print("Waiting for server...")
@@ -52,7 +24,7 @@ if __name__ == '__main__':
 
     joint_names = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint', 'wrist_1_joint', 'wrist_2_joint', 'wrist_3_joint']
     Q0 = [0.0, -1.0, 1.7, -2.2, -1.6, 0.0]
-    Q0 = [-pi/2, 0.0, 0.0, -pi/2, -1.6, 0.0]
+    #Q0 = [-pi/2, 0.0, 0.0, -pi/2, -1.6, 0.0]
     Q1 = [-pi/2, -1.0, 1.7, -2.2, -1.6, 0.0]
     
     q1 = np.linspace(-pi/4,-3*pi/4,10)
@@ -71,17 +43,17 @@ if __name__ == '__main__':
     robot_client.send_goal(g)
     robot_client.wait_for_result()
     rospy.sleep(1)
-    q_m = 0
+    
     i = 0
     c = 0
     rate = rospy.Rate(10)
     while not rospy.is_shutdown():
         robot_client.cancel_goal()
-        p_pos1, p_pos2 = pos_person.get_pperson()
+        
         #print(p_pos1, p_pos2)
-        q_m = q_m + 0.1
+        Qw = [-pi/2, 0, 0, -pi/2, -pi/2, 0]
         Q = [q1[i], q2[i], q3[i], q4[i], q5[i], q6[i]]
-        Q = [Q0[0], Q0[1], Q0[2], Q0[3]+q_m, Q0[4], Q0[5]]
+        
         # Modification of the motion
         if c == 0:
             i = i + 1
@@ -93,7 +65,7 @@ if __name__ == '__main__':
                 c = 0
 
 	
-        g.trajectory.points = [ JointTrajectoryPoint(positions=Q, velocities=[0]*6, time_from_start=rospy.Duration(0.1))]
+        g.trajectory.points = [ JointTrajectoryPoint(positions=Qw, velocities=[0]*6, time_from_start=rospy.Duration(1))]
         robot_client.send_goal(g)
         robot_client.wait_for_result()
 

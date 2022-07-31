@@ -37,33 +37,16 @@ class Capsule(object):
         self.p = np.transpose(np.array(p))
         self.u = np.transpose(np.array(u))
         self.r = r
-        # Variables necesarias para calcular la distancia minima
-        S1 = u - p
-        r11seq = np.sum(np.square(S1))
-        r11 = np.power(r11seq,0.5)
-        q1 = S1/r11
-        self.S1 = S1
-        self.r11seq = r11seq
-        self.r11 = r11
-        self.q1 = q1
         
     def send_positions(self, p, u):
         self.p = np.transpose(np.array(p))
         self.u = np.transpose(np.array(u))
-        S1 = u - p
-        r11seq = np.sum(np.square(S1))
-        r11 = np.power(r11seq,0.5)
-        q1 = S1/r11
-        self.S1 = S1
-        self.r11seq = r11seq
-        self.r11 = r11
-        self.q1 = q1
         
     def read_positions(self):
         return self.p, self.u
         
     def read_variables(self):
-        return self.p, self.u, self.r, self.S1, self.r11seq, self.r11, self.q1
+        return self.p, self.u, self.r
 
 
 def dh(d, theta, a, alpha):
@@ -82,13 +65,8 @@ def dh(d, theta, a, alpha):
     return T
 
 
-def ur5_fkine(q):
-    """
-    Calcular la cinematica directa del robot UR5 dados sus valores articulares. 
-    q es un vector numpy de la forma [q1, q2, q3, q4, q5, q6]
-    """
-    l1 = 1.2892
-    #l1 = 0.0892
+def transform(q):
+    l1 = 0.0892
     l2 = 0.425
     l3 = 0.392
     l4 = 0.09475
@@ -101,8 +79,22 @@ def ur5_fkine(q):
     T4 = dh( l5, q[3]+2*pi/2,  0, pi/2)
     T5 = dh( l4,     q[4]+pi,  0, pi/2)
     T6 = dh( l6,        q[5],  0,    0)
-    # Efector final con respecto a la base
-    T = T1.dot(T2).dot(T3).dot(T4).dot(T5).dot(T6)
+    # Transformadas
+    T01 = T1
+    T02 = T01.dot(T2)
+    T03 = T02.dot(T3)
+    T04 = T03.dot(T4)
+    T05 = T04.dot(T5)
+    T06 = T05.dot(T6)
+    return T01, T02, T03, T04, T05, T06
+    
+
+def ur5_fkine(q):
+    """
+    Calcular la cinematica directa del robot UR5 dados sus valores articulares. 
+    q es un vector numpy de la forma [q1, q2, q3, q4, q5, q6]
+    """
+    _,_,_,_,_,T = transform(q)
     return T
     
 
@@ -115,27 +107,14 @@ def positions_robot(q):
         q = np.array([0,0,0,0,0,0])
     # Crear una matriz 3x6
     pos = np.zeros((3,6))
-    l1 = 1.2892
-    #l1 = 0.0892
-    l2 = 0.425
-    l3 = 0.392
-    l4 = 0.09475
-    l5 = 0.1093
-    l6 = 0.0825
-    # Matrices DH
-    T1 = dh( l1,        q[0],  0, pi/2)
-    T2 = dh(  0, q[1]+2*pi/2, l2,    0)
-    T3 = dh(  0,        q[2], l3,    0)
-    T4 = dh( l5, q[3]+2*pi/2,  0, pi/2)
-    T5 = dh( l4,     q[4]+pi,  0, pi/2)
-    T6 = dh( l6,        q[5],  0,    0)
+    T01,T02,T03,T04,T05,T06 = transform(q)
     # Asignar posiciones
-    pos[0:3,0] = T1[0:3,3]
-    pos[0:3,1] = (T1.dot(T2))[0:3,3]
-    pos[0:3,2] = (T1.dot(T2).dot(T3))[0:3,3]
-    pos[0:3,3] = (T1.dot(T2).dot(T3).dot(T4))[0:3,3]
-    pos[0:3,4] = (T1.dot(T2).dot(T3).dot(T4).dot(T5))[0:3,3]
-    pos[0:3,5] = (T1.dot(T2).dot(T3).dot(T4).dot(T5).dot(T6))[0:3,3]
+    pos[0:3,0] = T01[0:3,3]
+    pos[0:3,1] = T02[0:3,3]
+    pos[0:3,2] = T03[0:3,3]
+    pos[0:3,3] = T04[0:3,3]
+    pos[0:3,4] = T05[0:3,3]
+    pos[0:3,5] = T06[0:3,3]
     return pos
 
 
@@ -144,27 +123,7 @@ def jacobian(q,n):
         q = np.array([0,0,0,0,0,0])
     # Crear una matriz 3x6
     pos = np.zeros((3,6))
-    l1 = 1.2892
-    #l1 = 0.0892
-    l2 = 0.425
-    l3 = 0.392
-    l4 = 0.09475
-    l5 = 0.1093
-    l6 = 0.0825
-    # Matrices DH
-    T1 = dh( l1,        q[0],  0, pi/2)
-    T2 = dh(  0, q[1]+2*pi/2, l2,    0)
-    T3 = dh(  0,        q[2], l3,    0)
-    T4 = dh( l5, q[3]+2*pi/2,  0, pi/2)
-    T5 = dh( l4,     q[4]+pi,  0, pi/2)
-    T6 = dh( l6,        q[5],  0,    0)
-    # Cinematica directa
-    T01 = T1
-    T02 = T01.dot(T2)
-    T03 = T02.dot(T3)
-    T04 = T03.dot(T4)
-    T05 = T04.dot(T5)
-    T06 = T05.dot(T6)
+    T01,T02,T03,T04,T05,T06 = transform(q)
     # Vectores z
     z0 = np.array([0,0,1])
     z1 = T01[0:3,2]
@@ -263,9 +222,6 @@ def rot2quat(R):
     quat = 4*[0.,]
 
     quat[0] = 0.5*np.sqrt(R[0,0]+R[1,1]+R[2,2]+1.0)
-    #quat[1] = 0.4*(R[2,1]-R[1,2])/quat[0]
-    #quat[2] = 0.4*(R[0,2]-R[2,0])/quat[0]
-    #quat[3] = 0.4*(R[1,0]-R[0,1])/quat[0]
     
     if ( np.fabs(R[0,0]-R[1,1]-R[2,2]+1.0) < dEpsilon ):
         quat[1] = 0.0
@@ -343,42 +299,47 @@ def lidar_filter(med, med_0, alpha = 0.1):
     """
     Filtra los datos obtenidos por el Lidar
     """
-    #alpha = 0.1
-    
     med_f = alpha*np.array(med) + (1-alpha)*np.array(med_0)
     med_f = med_f.tolist()
     return med_f
+
+
+def moving_average(a, n=3) :
+    ret = np.cumsum(a, dtype=float)
+    ret[n:] = ret[n:] - ret[:-n]
+    med_f = ret[0:] / n
+    med_f[0:n-1] =  a[0:n-1]
+    return med_f
     
     
-def person_pos_xy(med, ang):
+def person_pos_xy(med, ang, dist_x, dist_y, dist_z):
     """
     Calcula la posición de la persona con respecto al robot
     """
-    # Distanca x e y con respecto al robot
-    dist_x = 0.0
-    dist_y = 0.5
-    x_person = np.array([10, 10])
-    med_p = np.array([10,10])
-    ang_p = np.array([0, 0])
+    TH = np.array([[1,0,0,dist_x],[0,1,0,dist_y],[0,0,1,dist_z],[0,0,0,1]]) 
+    x_person = np.array([0, 4.25, 0.3, 0, 4.25, 2])
     
     med = np.array(med)
     ang = np.array(ang)
     
     pos,_ = find_peaks(-med,distance=17)
-    if len(pos) >= 2:
+    if len(pos) == 2:
         med_p = med[pos]
         ang_p = ang[pos]
     
-    r1 = med_p[0]+0.05
-    th1 = ang_p[0]
-    r2 = med_p[1]+0.05
-    th2 = ang_p[1]
+        r1 = med_p[0]+0.05
+        th1 = ang_p[0]
+        r2 = med_p[1]+0.05
+        th2 = ang_p[1]
     
-    x1 = np.array([r1*np.cos(th1)+dist_x, r1*np.sin(th1)+dist_y])
-    x2 = np.array([r2*np.cos(th2)+dist_x, r2*np.sin(th2)+dist_y])
+        x1 = np.array([r1*np.cos(th1), r1*np.sin(th1), 0, 1])
+        x1 = TH.dot(x1)
+        x2 = np.array([r2*np.cos(th2), r2*np.sin(th2), 0, 1])
+        x2 = TH.dot(x2)
     
-    x_person = (x1+x2)/2
-    x_person = np.array([x_person[0], x_person[1], 0.3, x_person[0], x_person[1], 2.0])
+        x_person = (x1+x2)/2
+        x_person = np.array([x_person[0], x_person[1], x_person[2], x_person[0], x_person[1], x_person[2]+1.7])
+    
     x_person = x_person.tolist()
     
     return x_person
@@ -413,197 +374,97 @@ def q_lim(q):
     q[4] = np.clip(q[4],-pi,0)
     q[5] = np.clip(q[5],-2*pi,2*pi)
     return q
+    
 
-   
+def QR_min(capsule_R, capsule_O):
     
-def QR_min_dist(capsule1, capsule2):
-    """
-    Calcular la distancia minima entre capsulas con
-    la factorizacion QR
-    """
-    p1, u1, _, S1, _, r11, q1    = capsule1.read_variables()
-    p2, u2, _, S2, r11seq, _, _ = capsule2.read_variables()
-    q2 = S2 - (S2.dot(q1))*q1
-    q2 = q2/np.linalg.norm(q2)
-    r12 = q1.dot(S2)
-    y = p1-p2
+    p1, u1, rad1 = capsule_R.read_variables()
+    p1 = np.array(p1); u1 = np.array(u1); rad1 = np.array([rad1])
+    s1 = u1 - p1
     
-    n1 = np.zeros(2)
-    n2 = np.zeros(2)
-    n3 = np.zeros(2)
-    n4 = np.zeros(2)
+    p2, u2, rad2 = capsule_O.read_variables()
+    p2 = np.array(p2); u2 = np.array(u2); rad2 = np.array([rad2])
+    #print(p2, u2)
+    s2 = u2 - p2
     
-    n4[0] = q1.dot(y)
-    n24r22 = n4[0]*r12 - S1.dot(y)
+    A = np.array([[s2[0], -s1[0]],
+                  [s2[1], -s1[1]],
+                  [s2[2], -s1[2]]])
+    y = np.array([[p2[0] - p1[0]],
+                  [p2[1] - p1[1]],
+                  [p2[2] - p1[2]]])
     
-    n3[0] = n4[0] + r11
-    n14seq = n4[0]*n4[0]
-    yTy = y.dot(y)
-    r22seq = r11seq - r12*r12
-    n1[0] = n4[0] - r12
-    n2[0] = n1[0] + r11
+    Q,R = np.linalg.qr(A)
     
-    r22 = np.power(r22seq,0.5)
-    Q = np.array([q1,q2]).T
-    R = np.array([[r11,r12],[0,r22]])
-    x = np.array([[0,1,1,0],[1,1,0,0]])
-    N = R.dot(x) + np.transpose(Q).dot(np.array([y]).T)
+    n1 = np.array([[0], [1]])
+    n2 = np.array([[1], [1]])
+    n3 = np.array([[1], [0]])
+    n4 = np.array([[0], [0]])
     
-    n4[1] = N[1][3] 
-    n3[1] = n4[1]
-    n2[1] = N[1][1]
-    n1[1] = N[1][0]
-
-    # Verificar si el punto esta en la horizontal inferior
-    if (n24r22 > 0 and n4[0]*n3[0] < 0):
-        #print("Punto en el segmento horizontal inferior")
-        umin = np.array([0,n4[1]])
-        dmin2 = yTy - n14seq
-        return umin, dmin2
+    n1 = R.dot(n1) + (Q.T).dot(y)
+    n2 = R.dot(n2) + (Q.T).dot(y)
+    n3 = R.dot(n3) + (Q.T).dot(y)
+    n4 = R.dot(n4) + (Q.T).dot(y)
+    N = [[n1[0][0], n2[0][0], n3[0][0], n4[0][0], n1[0][0]],
+         [n1[1][0], n2[1][0], n3[1][0], n4[1][0], n1[1][0]]]
     
-    # Verificar si los cilindros son paralelos
-    if (r22seq == 0):
-        if n4[0]*n2[0] <= 0:
-            #print("Paralelos entre 2 y 4")
-            umin = np.array([0,n4[1]])
-            dmin2 = yTy - n14seq
-            return umin, dmin2
-        if n1[0]*n3[0] <= 0:
-            #print("Paralelos entre 1 y 3")
-            umin = np.array([0,n4[1]])
-            dmin2 = yTy - n14seq
-            return umin, dmin2
-        if r12 < 0:
-            if n4[0] > 0:
-                #print("Paralelo punto n4")
-                umin = np.array([n4[0],n4[1]])
-                dmin2 = yTy
-                return umin, dmin2
-            elif n2[0] < 0:
-                #print("Paralelo punto n2")
-                umin = np.array([n2[0],n2[1]])
-                dmin2 = n2[0]*n2[0] + yTy - n14seq
-                return umin, dmin2
-        else:
-            if n1[0] > 0:
-                #print("Paralelo punto n1")
-                umin = np.array([n1[0],n1[1]]) 
-                dmin2 = n1[0]*n1[0] + yTy - n14seq
-                return umin, dmin2
-            elif n3[0] < 0:
-                #print("Paralelo punto n3")
-                umin = np.array([n3[0],n3[1]]) 
-                dmin2 = n3[0]*n3[0] + yTy - n14seq
-                return umin, dmin2
+    m4 = n1[0] - n1[1]*R[0][1]/R[1][1]
+    m3 = m4 + R[0][0]
     
-    n21r22 = r22seq + n24r22
-    
-    # Verificar si el punto esta en la horizontal superior
-    if (n21r22 < 0 and n1[0]*n2[0] < 0):
-        umin = np.array([0, n1[1]])  
-        dmin2 = (n21r22*n21r22 - n24r22*n24r22)/r22seq + yTy - n14seq
-        return umin, dmin2
-        
-    m4 = n1[0] + r12*n21r22/r22seq
-    m3 = m4 + r11
-    
-    # Verificar si el punto esta dentro del paralelogramo
-    if (n21r22*n24r22 < 0 and m3*m4 < 0):
-        #print("Punto dentro del paralelogramo")
-        umin = np.array([0, 0]) 
-        dmin2 = yTy - n14seq - n24r22*n24r22/r22seq
-        return umin, dmin2
-    # Verificar si el punto mas cerca al origen esta en los
-    # segmentos oblicuos
-    elif (m4*m4 < m3*m3):
-        # Cerca al oblicuo izquierdo
-        #print("Oblicuo izquierdo")
-        u = ((-n4[0])*(n1[0]-n4[0])+(-n4[1])*(n1[1]-n4[1]))/(np.power(n1[0]-n4[0],2)+np.power(n1[1]-n4[1],2))
-        if u >= 1:
-            umin = np.array([n1[0], n1[1]])
-        elif u <= 0:
-            umin = np.array([n4[0], n4[0]])
-        else:
-            umin = np.array([n4[0]+u*(n1[0]-n4[0]),n4[1]+u*(n1[1]-n4[1])])        
-        
-        if r12*n1[0] > n21r22:
-            n11seq = n1[0]*n1[0]
-            n12seq = n2[0]*n2[0]
-            if n11seq < n12seq:
-                #umin = np.array([n1[0], n1[1]])
-                dmin2 = n11seq + yTy - n14seq + (n21r22*n21r22 - n24r22*n24r22)/r22seq
-                return umin, dmin2
-            else:
-                #umin = np.array([n2[0], n1[1]])
-                dmin2 = n12seq + yTy - n14seq + (n21r22*n21r22 - n24r22*n24r22)/r22seq
-                return umin, dmin2
-        elif r12*n4[0] < n24r22:
-            if n3[0]*n3[0] > n14seq:
-                #umin = np.array([n4[0],n4[1]]) 
-                dmin2 = yTy
-                return umin, dmin2
-            else:
-                #umin = np.array([n3[0],n4[1]]) 
-                dmin2 = n3[0]*n3[0] + yTy - n14seq
-                return umin, dmin2
-        else:
-            dmin2 = m4*m4*r22seq/r11seq + yTy - n14seq - n24r22*n24r22/r22seq
-            return umin, dmin2
+    if n4[1]*n1[1] < 0 and m4*m3 < 0:
+        u_min = np.array([0,0])
     else:
-        # Cerca del oblicuo derecho
-        #print("Oblicuo derecho")
-        u = ((-n3[0])*(n2[0]-n3[0])+(-n3[1])*(n2[1]-n3[1]))/(np.power(n2[0]-n3[0],2)+np.power(n2[1]-n3[1],2))
-        if u >= 1:
-            umin = np.array([n2[0], n2[1]])
-        elif u <= 0:
-            umin = np.array([n3[0], n3[0]])
-        else:
-            umin = np.array([n3[0]+u*(n2[0]-n3[0]),n3[1]+u*(n2[1]-n3[1])])
-            
-        if (n2[0]*r12 > n21r22):
-            n11seq = n1[0]*n1[0]
-            n12seq = n2[0]*n2[0]
-            if n11seq < n12seq:
-                #umin = np.array([n1[0], n1[1]])
-                dmin2 = n11seq + yTy - n14seq + (n21r22*n21r22 - n24r22*n24r22)/r22seq
-                return umin, dmin2
-            else: 
-                #umin = np.array([n2[0], n1[1]])
-                dmin2 = n12seq + yTy - n14seq + (n21r22*n21r22 - n24r22*n24r22)/r22seq
-                return umin, dmin2
-        elif (n3[0]*r12 < n24r22):
-            if n3[0]*n3[0] < n14seq:
-                #umin = np.array([n3[0],n3[1]]) 
-                dmin2 = n3[0]*n3[0] + yTy - n14seq
-                return umin, dmin2
+        for i in range(4):
+            punto_1 = np.array([N[0][i],N[1][i]])
+            punto_2 = np.array([N[0][i+1],N[1][i+1]])
+            c = segment_min(punto_1, punto_2)
+            if i == 0:
+                u_min = c
             else:
-                #umin = np.array([n4[0],n4[1]])
-                dmin2 = yTy
-                return umin, dmin2
-        else:
-            dmin2 = m3*m3*r22seq/r11seq + yTy - n14seq - n24r22*n24r22/r22seq
-            return umin, dmin2
+                if np.linalg.norm(u_min) > np.linalg.norm(c):
+                    u_min = c
+    
+    d_min = np.dot(u_min.T,u_min) + np.dot(y.T,y) - (y.T).dot(Q).dot(Q.T).dot(y)
+    d_min = np.power(d_min,0.5) - rad1 - rad2
+    
+    x_min = np.linalg.inv(R).dot(u_min-np.dot(Q.T,y))
+    v1 = np.array([p1]).T + A.dot(np.array([[0, 0],[0, -1]])).dot(x_min)
+    v1 = np.array([v1[0][0],v1[1][0],v1[2][0]])
+    v2 = np.array([p2]).T + A.dot(np.array([[1, 0],[0, 0]])).dot(x_min)
+    v2 = np.array([v2[0][0],v2[1][0],v2[2][0]])
+    x_min = np.array([x_min[0][0],x_min[1][0]])
+    
+    return u_min, d_min, x_min, v1, v2
         
+def segment_min(a, b):
+    ab = b - a
     
-def segment_capsule(capsule1, capsule2, umin):
-    p1, u1, ra1, S1, _, r11, q1    = capsule1.read_variables()
-    p2, u2, ra2, S2, r11seq, _, _ = capsule2.read_variables()
-    q2 = S2 - (S2.dot(q1))*q1
-    q2 = q2/np.linalg.norm(q2)
-    r12 = q1.dot(S2)
-    r22seq = r11seq - r12*r12
-    r22 = np.power(r22seq,0.5)
-    y = p1-p2
+    u = (-a[0])*(ab[0]) + (-a[1])*(ab[1])
+    u = u/((ab[0])*(ab[0]) + (ab[1])*(ab[1]))
     
-    Q = np.array([q1,q2]).T
-    R = np.array([[r11,r12],[0,r22]])
-    A = Q.dot(R)
+    if u >= 1:
+        c = b
+    elif u <= 0:
+        c = a    
+    else:
+        c = np.array([a[0]+u*(ab[0]), a[1]+u*(ab[1])])
+    return np.array([c]).T
     
-    xmin = np.linalg.inv(R).dot(umin-np.transpose(Q).dot(y))
-    #xmin = np.clip(xmin,0,1)
-    v1 = p1 + A.dot(np.array([[-1,0],[0,0]])).dot(xmin)
-    v2 = p2 + A.dot(np.array([[0,0],[0,1]])).dot(xmin)
-    v1[2] = v2[2] 
-    return v1, v2, xmin
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     

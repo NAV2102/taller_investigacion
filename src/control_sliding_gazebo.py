@@ -23,11 +23,8 @@ if __name__ == '__main__':
     print("Connected to server")
 
     # Archivos donde se almacenara los datos
-    fqact = open("../texto/qactual.dat", "w")
-    fqdes = open("../texto/qdeseado.dat", "w")
-    fxact = open("../texto/xactual.dat", "w")
-    fxdes = open("../texto/xdeseado.dat", "w")
-    fu    = open("../texto/u.dat", "w")
+    fqact = open("/home/nicolas/catkin_ws/src/proyecto/texto/qactual.dat", "w")
+    fqdes = open("/home/nicolas/catkin_ws/src/proyecto/texto/qdeseado.dat", "w")
 
     # Nombres de las articulaciones
     jnames = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
@@ -59,7 +56,7 @@ if __name__ == '__main__':
     rospy.sleep(1)
     
     # Modelo RBDL
-    modelo = rbdl.loadModel('../urdf/ur5_robot2.urdf')
+    modelo = rbdl.loadModel('/home/nicolas/catkin_ws/src/proyecto/urdf/ur5_robot.urdf')
     ndof   = modelo.q_size     # Grados de libertad
     
     # Frecuencia del envio (en Hz)
@@ -88,12 +85,15 @@ if __name__ == '__main__':
     while not rospy.is_shutdown():
         robot_client.cancel_goal()
         
-        mov = pi/2*np.cos(pi*t/8) - pi/2  
+        mov = pi/2*np.cos(pi*t/8) - pi/2
+        mov2 = pi/8*np.cos(3*pi*t/4) - pi/4  
         dmov = -np.sin(pi*t/8)*pi*pi/16 
-        ddmov = -np.cos(pi*t/8)*pi*pi*pi/128    
-        q_des = np.array([mov, -0.5, 0.8, -2.2, -1.6, 0.0])
-        dq_des = np.array([dmov, 0.0, 0.0, 0.0, 0.0, 0.0])
-        ddq_des = np.array([ddmov, 0.0, 0.0, 0.0, 0.0, 0.0])
+        dmov2 = -np.sin(3*pi*t/4)*pi*pi*3/32 
+        ddmov = -np.cos(pi*t/8)*pi*pi*pi/128
+        ddmov2 = -np.cos(3*pi*t/4)*pi*pi*pi*9/128    
+        q_des = np.array([mov, mov2, 0.8, -2.2, -1.6, 0.0])
+        dq_des = np.array([dmov, dmov2, 0.0, 0.0, 0.0, 0.0])
+        ddq_des = np.array([ddmov, ddmov2, 0.0, 0.0, 0.0, 0.0])
         
         # Leer valores del simulador
         q  = robot.read_joint_positions()
@@ -109,13 +109,10 @@ if __name__ == '__main__':
         s = de + lamb.dot(e)
         
         # Almacenamiento de datos
-        fxact.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+'\n')
-        fxdes.write(str(t)+' '+str(xdes[0])+' '+str(xdes[1])+' '+
-                str(xdes[2])+'\n')
         fqact.write(str(t)+' '+str(q[0])+' '+str(q[1])+' '+ str(q[2])+
-                ' '+ str(q[3])+' '+str(q[4])+' '+str(q[5])+'\n ')
-        fqdes.write(str(t)+' '+str(q_des[0])+' '+str(q_des[1])+' '+ str(q_des[2])+' '+ str(q_des[3])+' '+str(q_des[4])+' '+str(q_des[5])+'\n ')
-
+                ' '+ str(q[3])+' '+str(q[4])+' '+str(q[5])+'\n')
+        fqdes.write(str(t)+' '+str(q_des[0])+' '+str(q_des[1])+' '+ str(q_des[2])+' '+ str(q_des[3])+' '+str(q_des[4])+' '+str(q_des[5])+'\n')
+        
         # ----------------------------
         # Control dinamico (COMPLETAR)
         # ----------------------------
@@ -133,8 +130,8 @@ if __name__ == '__main__':
         u[0:3] = np.clip(u[0:3],-150,150)
         u[3:6] = np.clip(u[3:6],-28,28)
 
-        fu.write(str(t)+' '+str(u[0])+' '+str(u[1])+' '+str(u[2])+' '+
-                 str(u[3])+' '+str(u[4])+' '+str(u[5])+'\n')
+        #fu.write(str(t)+' '+str(u[0])+' '+str(u[1])+' '+str(u[2])+' '+
+        #         str(u[3])+' '+str(u[4])+' '+str(u[5])+'\n')
         
         # Simulacion del robot
         robot.send_command(u)
@@ -146,15 +143,15 @@ if __name__ == '__main__':
         
         t = t+dt
     
-        #if np.linalg.norm(e)<0.001:
-         #   break
+        if t >= 16:
+            break
     
         # Esperar hasta la siguiente  iteracion
         rate.sleep()
 
     robot_client.cancel_goal()
+
     fqact.close()
     fqdes.close()
-    fxact.close()
-    fxdes.close()
-    fu.close()
+
+

@@ -1,0 +1,99 @@
+#!/usr/bin/env python
+
+from __future__ import print_function
+import rospy
+import numpy as np
+from functions import *
+
+from matplotlib import pyplot as plt
+import warnings
+import time
+warnings.filterwarnings("ignore",".*GUI is implemented.*")
+
+pi = np.pi
+
+if __name__ == '__main__':    
+    rospy.init_node('test_min_dist')
+    
+    n = 5000
+    u1 = np.random.rand(3)*10-5
+    p1 = np.random.rand(3)*10-5
+    u2 = np.random.rand(3)*10-5
+    p2 = np.random.rand(3)*10-5
+    """
+    for i in range(n-1):
+        u1 = np.array([u[0][i], u[1][i], u[2][i]])
+        p1 = np.array([p[0][i], p[1][i], p[2][i]])
+        u2 = np.array([u[0][i+1], u[1][i+1], u[2][i+1]])
+        p2 = np.array([p[0][i+1], p[1][i+1], p[2][i+1]])
+    """        
+    cap1 = Capsule(u1, p1, 0.1)
+    cap2 = Capsule(u2, p2, 0.1)
+            
+    u_min, N, d_min, x_min, v1, v2 = QR_min(cap1, cap2)
+    print(u1,p1)
+    print(u2,p2)
+    print(x_min)
+    print(v1.T,v2.T)
+    print(d_min)
+    plt.ion()
+    
+    figure, ax = plt.subplots(figsize=(10, 8))
+    
+    graf1, = ax.plot(N[0][0],N[1][0],'*r')
+    graf2, = ax.plot(N[0][1],N[1][1],'*r')
+    graf3, = ax.plot(N[0][2],N[1][2],'*r')
+    graf4, = ax.plot(N[0][3],N[1][3],'*r')
+    graf5, = ax.plot(u_min[0],u_min[1],'*k')
+    
+    plt.axis([-25, 25, -25, 25])
+    plt.grid()
+    
+    freq = 10
+    dt = 1.0/freq
+    rate = rospy.Rate(freq)
+
+    while not rospy.is_shutdown():
+        """
+        n = 5000
+        u = np.random.rand(3,n)*100-50
+        p = np.random.rand(3,n)*100-50
+        
+        for i in range(n-1):
+            u1 = np.array([u[0][i], u[1][i], u[2][i]])
+            p1 = np.array([p[0][i], p[1][i], p[2][i]])
+            u2 = np.array([u[0][i+1], u[1][i+1], u[2][i+1]])
+            p2 = np.array([p[0][i+1], p[1][i+1], p[2][i+1]])
+            
+            cap1 = Capsule(u1, p1, 0.1)
+            cap2 = Capsule(u2, p2, 0.1)
+            
+            u_min = QR_min(cap1, cap2)
+        """
+        """
+        u1 = np.random.rand(3)*10-5
+        p1 = np.random.rand(3)*10-5
+        u2 = np.random.rand(3)*10-5
+        p2 = np.random.rand(3)*10-5
+        
+        cap1 = Capsule(u1, p1, 0.1)
+        cap2 = Capsule(u2, p2, 0.1)
+            
+        u_min, N, d_min = QR_min(cap1, cap2)
+        print(d_min)
+        graf1.set_xdata(N[0][0]); graf1.set_ydata(N[1][0])
+        graf2.set_xdata(N[0][1]); graf2.set_ydata(N[1][1])
+        graf3.set_xdata(N[0][2]); graf3.set_ydata(N[1][2])
+        graf4.set_xdata(N[0][3]); graf4.set_ydata(N[1][3])
+        graf5.set_xdata(u_min[0]); graf5.set_ydata(u_min[1])
+        """
+        figure.canvas.draw()
+        figure.canvas.flush_events()
+ 
+        time.sleep(0.1)
+        
+        
+    
+    
+        
+

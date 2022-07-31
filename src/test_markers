@@ -18,6 +18,9 @@ class PosPerson(object):
         self.pub = rospy.Subscriber(topic, PersonConfig, self.callback)
         self.pperson = PersonConfig()
         
+        # Esperar 1 segundo
+        rospy.sleep(1)
+        
     def callback(self, msg):
         self.pperson = msg
         
@@ -25,13 +28,9 @@ class PosPerson(object):
         # Obtener la posicion de la capsula de la persona en el
         # espacio cartesiano
         pos = self.pperson.pos_person
-        if len(pos) < 6:
-            u = 0
-        else:
-            u = 1
         p_pos1 = np.array(pos[0:3])
         p_pos2 = np.array(pos[3:6])
-        return p_pos1, p_pos2, u
+        return p_pos1, p_pos2
 
 
 class PosRobot(object):
@@ -40,6 +39,9 @@ class PosRobot(object):
         self.pub = rospy.Subscriber(topic, JointState, self.callback)
         self.probot = JointState()
         
+        # Esperar 1 segundo
+        rospy.sleep(1)
+        
     def callback(self, msg):
         self.probot = msg
         
@@ -47,17 +49,14 @@ class PosRobot(object):
         # Obtener la configuracion del robot
         q_rob = self.probot.position
         q = np.zeros(6)
-        if len(q_rob) < 5:
-            u = 0
-        else:
-            q[0] = q_rob[2]
-            q[1] = q_rob[1]
-            q[2] = q_rob[0]
-            q[3] = q_rob[3]
-            q[4] = q_rob[4]
-            q[5] = q_rob[5]
-            u = 1
-        return q, u
+        q[0] = q_rob[2]
+        q[1] = q_rob[1]
+        q[2] = q_rob[0]
+        q[3] = q_rob[3]
+        q[4] = q_rob[4]
+        q[5] = q_rob[5]
+        
+        return q
 
 class MinDist(object):
     def __init__(self):
@@ -65,17 +64,17 @@ class MinDist(object):
         self.pub = rospy.Subscriber(topic, DistMin, self.callback)
         self.dmin = DistMin()
         
+        # Esperar 1 segundo
+        rospy.sleep(1)
+        
     def callback(self, msg):
         self.dmin = msg
         
     def get_rs(self):
         r1 = self.dmin.r1
         r2 = self.dmin.r2
-        if len(r1)<3 or len(r2)<3:
-            u = 0
-        else:
-            u = 1
-        return r1, r2, u
+      
+        return r1, r2
 
         
 if __name__ == '__main__':    
@@ -87,16 +86,16 @@ if __name__ == '__main__':
     
     o1 = BallMarker(color['GREEN'])
     o2 = BallMarker(color['GREEN'])
-    o3 = BallMarker(color['GREEN'])
-    o4 = BallMarker(color['GREEN'])
-    o5 = BallMarker(color['GREEN'])
+    o3 = BallMarker(color['GREEN'], scale = 0.13)
+    o4 = BallMarker(color['GREEN'], scale = 0.13)
+    o5 = BallMarker(color['GREEN'], scale = 0.13)
     o6 = BallMarker(color['GREEN'])
     
     p1 = BallMarker(color['BLUE'])
     p2 = BallMarker(color['BLUE'])
     
-    mr1 = BallMarker(color['RED'], scale=0.1)
-    mr2 = BallMarker(color['RED'], scale=0.1)
+    mr1 = BallMarker(color['YELLOW'], scale=0.1)
+    mr2 = BallMarker(color['RED'], scale=0.3)
     
     rate = rospy.Rate(100)
 
@@ -104,26 +103,21 @@ if __name__ == '__main__':
         
         # Obtener la position en el espacio cartesiano de la 
         # persona y el robot
-        p_pos1, p_pos2, u1 = pos_person.get_pperson()
-        q, u2 = pos_robot.get_q()
-        r1, r2, u3 = min_dist.get_rs()
-        #print(u1,u2,u3)
-        if u1==1 and u2==1 and u3 == 1: 
+        p_pos1, p_pos2 = pos_person.get_pperson()
+        q = pos_robot.get_q()
+        r1, r2 = min_dist.get_rs()
         
-            pos = positions_robot(q)
-            o1.xyz(pos[0:3,0])
-            o2.xyz(pos[0:3,1])
-            o3.xyz(pos[0:3,2])
-            o4.xyz(pos[0:3,3])
-            o5.xyz(pos[0:3,4])
-            o6.xyz(pos[0:3,5])
-            #print(pos[0:3,4])
-            #print(pos[0:3,5])
-            p1.xyz(p_pos1)
-            p2.xyz(p_pos2)
-
-            mr1.xyz(r1)
-            mr2.xyz(r2)
+        pos = positions_robot(q)
+        o1.xyz(pos[0:3,0])
+        o2.xyz(pos[0:3,1])
+        o3.xyz(pos[0:3,2])
+        o4.xyz(pos[0:3,3])
+        o5.xyz(pos[0:3,4])
+        o6.xyz(pos[0:3,5])
+        p1.xyz(p_pos1)
+        p2.xyz(p_pos2)
+        mr1.xyz(r1)
+        mr2.xyz(r2)
         
         rate.sleep()
         

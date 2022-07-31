@@ -30,6 +30,9 @@ class PosPerson(object):
         self.sus = rospy.Subscriber(topic, PersonConfig, self.callback)
         self.pperson = PersonConfig()
         
+        # Esperar 1 segundo
+        rospy.sleep(1)
+        
     def callback(self, msg):
         self.pperson = msg
         
@@ -37,50 +40,20 @@ class PosPerson(object):
         # Obtener la posicion de la capsula de la persona en el
         # espacio cartesiano
         pos = self.pperson.pos_person
-        if len(pos) < 6: u = 0
-        else: u = 1
+        
         p_pos1 = np.array(pos[0:3])
         p_pos2 = np.array(pos[3:6])
-        return p_pos1, p_pos2, u
+        return p_pos1, p_pos2
 
-"""
-class PosRobot(object):
-    def __init__(self):
-        topic    = 'joint_states'
-        self.sus = rospy.Subscriber(topic, JointState, self.callback)
-        self.probot = JointState()
-        
-    def callback(self, msg):
-        self.probot = msg
-        
-    def get_q(self):
-        # Obtener la configuracion del robot
-        q_rob = self.probot.position
-        dq_rob = self.probot.velocity
-        q = np.zeros(6)
-        dq = np.zeros(6)
-        if len(q_rob) < 5: u = 0
-        else:
-            q[0] = q_rob[2]
-            q[1] = q_rob[1]
-            q[2] = q_rob[0]
-            q[3] = q_rob[3]
-            q[4] = q_rob[4]
-            q[5] = q_rob[5]
-            dq[0] = dq_rob[2]
-            dq[1] = dq_rob[1]
-            dq[2] = dq_rob[0]
-            dq[3] = dq_rob[3]
-            dq[4] = dq_rob[4]
-            dq[5] = dq_rob[5]
-            u = 1
-        return q, dq, u
-"""
+
 class MinDist(object):
     def __init__(self):
         topic    = 'dist_min'
         self.sus = rospy.Subscriber(topic, DistMin, self.callback)
         self.dmin = DistMin()
+        
+        # Esperar 1 segundo
+        rospy.sleep(1)
         
     def callback(self, msg):
         self.dmin = msg
@@ -95,9 +68,8 @@ class MinDist(object):
         r2 = np.array(r2)
         cp = np.array(cp)
         #print(r1, r2)
-        if len(r1)<3 or len(r2)<3: u = 0
-        else: u = 1
-        return d_min, r1, r2, cp, u
+        
+        return d_min, r1, r2, cp
 
         
 if __name__ == '__main__':    
@@ -121,6 +93,7 @@ if __name__ == '__main__':
     
     # Archivos donde se guardaran los datos
     fdatos = open("/home/nicolas/catkin_ws/src/proyecto/texto/datos.dat", "w")
+    fu = open("/home/nicolas/catkin_ws/src/proyecto/texto/u.dat", "w")
     
     # Modelo RBDL
     modelo = rbdl.loadModel('/home/nicolas/catkin_ws/src/proyecto/urdf/ur5_robot.urdf')
@@ -146,21 +119,21 @@ if __name__ == '__main__':
     rospy.sleep(2)
     
     # Parametros de control APFM
-    dcr = 0.45
-    d1  = 0.7
-    cv  = 0.05
-    k1  = 0.2
+    dcr = 0.05
+    d1  = 1
+    cv  = 0.1
+    k1  = 0.5
     k2  = 0.1
-    l1  = 0.3
-    l2  = 0.6
-    Kp  = 3*np.diag([3, 1, 1])
-    Ki  = 0.5*np.diag([1, 1, 1])
+    l1  = 0.02
+    l2  = 0.05
+    Kp  = 3*np.diag([3, 3, 3])
+    Ki  = 2*np.diag([1, 1, 1])
     I0  = np.array([0, 0, 0])
     e0  = np.array([0, 0, 0])
     Id  = 0.5*np.eye(3)
     # Se definen las ganancias del controlador
-    n     = 0.1*np.array([200.0, 50.0, 10.0, 50.0, 50.0, 1.0])
-    lamb  = 20*np.diag([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+    n     = 0.1*np.array([200.0, 100.0, 100.0, 100.0, 100.0, 1.0])
+    lamb  = 10*np.diag([1.0, 1.0, 1, 1, 1, 1.0])
     alpha = 0.2
     u     = np.zeros(ndof)          # Reemplazar por la ley de control
     b     = np.zeros(ndof)          # Para el vector de efectos no lineales
@@ -169,6 +142,7 @@ if __name__ == '__main__':
     
     # Parametros para el cambio de control
     t_s = 8
+    t_0 = 0
     estado = 0
     temp_esp = 0
     
@@ -183,112 +157,153 @@ if __name__ == '__main__':
     q  = robot.read_joint_positions()
     rbdl.CompositeRigidBodyAlgorithm(modelo,q,H0)
     
-    fdatos.write("Tiempo"+' '+"PosX"+' '+"PosY"+' '+"PosZ"+' '+ "DesX"+' '+"DesY"+' '+"DesZ"+' '+"VelX"+' '+"VelY"+' '+"VelZ"+' '+"Dmin"+'\n')
+    fdatos.write("Tiempo"+' '+"PosX"+' '+"PosY"+' '+"PosZ"+' '+ "DesX"+' '+"DesY"+' '+"DesZ"+' '+"VelX"+' '+"VelY"+' '+"VelZ"+' '+"Dmin"+' '+"Dcr"+' '+"Vrep"+' '+"Beta"+' '+"cp"+'\n')
+    
+    mov1_0 = 0
+    dmov1_0 = 0
+    mov2_0 = 0
+    dmov2_0 = 0
+    r1_0 = 0
+    r2_0 = 0
     
     while not rospy.is_shutdown():
         
         robot_client.cancel_goal()
         
-        # Trayectoria predeterminada        
+        # Trayectoria predeterminada 
+        
+        mov1 = -(pi/2)/(1+np.power((t-4)/2.5,10))
+        dmov1 = (mov1 - mov1_0)/dt
+        mov1_0 = mov1
+        ddmov1 = (dmov1 - dmov1_0)/dt
+        dmov1_0 = dmov1
+        mov2 = (pi/2)/(1+np.power((4-t)/2.5,10))-pi   
+        dmov2 = (mov2 - mov2_0)/dt
+        mov2_0 = mov2
+        ddmov2 = (dmov2 - dmov2_0)/dt
+        dmov2_0 = dmov2    
+        if t < 4:
+            mov = mov1
+            dmov = dmov1
+            ddmov = ddmov1
+        else:
+            mov = mov2
+            dmov = dmov2
+            ddmov = ddmov2    
+        """
         mov = pi/2*np.cos(pi*t/8) - pi/2  
         dmov = -np.sin(pi*t/8)*pi*pi/16 
-        ddmov = -np.cos(pi*t/8)*pi*pi*pi/128    
+        ddmov = -np.cos(pi*t/8)*pi*pi*pi/128
+        """
         q_des = np.array([mov, -0.5, 0.8, -2.2, -1.6, 0.0])
         dq_des = np.array([dmov, 0.0, 0.0, 0.0, 0.0, 0.0])
         ddq_des = np.array([ddmov, 0.0, 0.0, 0.0, 0.0, 0.0])
-        xdes = ur5_fkine(q_des)[0:3,3] 
-        #q_mov = q_des.tolist()
-        #dq_mov = [0]*6       
+        xdes = ur5_fkine(q_des)[0:3,3]   
                 
         # Leer los valores de los suscriptores
-        p_pos1, p_pos2, u1 = pos_person.get_pperson()
-        #q, dq, u2 = pos_robot.get_q()
-        dmin, r2, r1, cp, u3 = mini_dist.get_rs()
-        #r2 = np.array([0.0, 1, r2[2]])
-        #dmin = np.linalg.norm(r1-r2)
+        p_pos1, p_pos2 = pos_person.get_pperson()
+        dmin, r1, r2, cp = mini_dist.get_rs()
+        #print("dmin: ",dmin)
+        #print("r2: ",r2)
+        #r2 = np.array([0, 1, r2[2]])
+        #dmin = np.linalg.norm(r2-r1)
+        #dmin = np.array([dmin])
         
         q  = robot.read_joint_positions()
         dq = robot.read_joint_velocities()
 
         # No se realizará acción si no se recibe uno de
         # los mensajes
-        if u1==1 and u3 == 1: 
             
-            x = ur5_fkine(q)[0:3,3]
-            Je = jacobian(q,6)
-            dx = Je.dot(dq)
+        x = ur5_fkine(q)[0:3,3]
+        Je = jacobian(q,6)
+        dx = Je.dot(dq)
 
-            # Actualizar marcadores
-            ball_des.xyz(xdes)
-            ball_act.xyz(x)
-            mr1.xyz(r1)
-            mr2.xyz(r2)
+        # Actualizar marcadores
+        ball_des.xyz(xdes)
+        ball_act.xyz(x)
+        mr1.xyz(r1)
+        mr2.xyz(r2)
+        
+        vrep1 = np.array([0])
+        beta = np.array([0])
             
-            # Escribir datos en los archivos
-            fdatos.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+' '+str(xdes[0])+' '+str(xdes[1])+' '+str(xdes[2])+' '+str(dx[0])+' '+str(dx[1])+' '+str(dx[2])+' '+str(dmin)+'\n')
+        
             
-            # Cambio de estados
-            if estado == 0 and dmin-dcr <= 0.2: estado = 1
-            elif estado == 1 and dmin-dcr > 0.2: 
-                temp_esp = temp_esp + dt
-                if temp_esp >= 0.5:
-                    estado = 0
-                    temp_esp = 0
-            else: estado = estado         
+        # Cambio de estados
+        if estado == 0 and dmin-dcr <= 0.2: 
+            estado = 1
+            t_0 = t
+        elif estado == 1 and dmin-dcr > 0.2: 
+            temp_esp = temp_esp + dt
+            if temp_esp >= 0.5:
+                estado = 0
+                temp_esp = 0
+        else: estado = estado         
             
-            # Control APFM
-            if estado == 1:                
+        # Control APFM
+        if estado == 1:                
                 
-                JeT = np.transpose(Je)
-                Jcp = jacobian(q,int(cp))
-                JcpT = np.transpose(Jcp)
+            JeT = np.transpose(Je)
+            Jcp = jacobian(q,int(cp))
+            JcpT = np.transpose(Jcp)
             
-                # Calculo de los vectores de repulsion            
-                s = (r1 - r2)/np.linalg.norm(r1-r2)
-                vrel = -np.linalg.norm(dx)
-                if dmin <= l1: c = 1
-                elif dmin >= l2: c = 0
-                else: c = 0.5 + 0.5*np.cos(pi*(dmin-l1)/(l2-l1)) 
-                if vrel < 0:
-                    d0 = d1 - cv*vrel
-                    vrep2 = -c*k2*vrel
-                else:
-                    d0 = d1
-                    vrep2 = 0
+            # Calculo de los vectores de repulsion            
+            s = (r1 - r2)/np.linalg.norm(r1-r2)
+            dr1 = (r1-r1_0)/dt
+            r1_0 = r1
+            dr2 = (r2-r2_0)/dt
+            r2_0 = r2
+            vrel = np.linalg.norm(dr2) - np.linalg.norm(dr1)
+            if dmin <= l1: c = 1
+            elif dmin >= l2: c = 0
+            else: c = 0.5 + 0.5*np.cos(pi*(dmin-l1)/(l2-l1)) 
+            if vrel < 0:
+                d0 = d1 - cv*vrel
+                vrep2 = -c*k2*vrel
+            else:
+                d0 = d1
+                vrep2 = 0
                 
-                if dmin - dcr < d0: vrep1 = k1*(d0/(dmin-dcr)-1)
-                else: vrep1 = 0
-                vrep = vrep1 + vrep2
-                vrep = vrep*s
+            if dmin - dcr < d0: 
+                vrep1 = k1*(d0/(dmin-dcr)-1)
+                if vrep1 >= 10: vrep1 = np.array([10])
+                if dmin <= dcr: vrep1 = np.array([10])
+            else: 
+                vrep1 = 0
+            vrep = vrep1 + vrep2
+            gama = 1-np.exp(-(t-t_0)/0.4)
+            vrep = gama*vrep
+            vrep = vrep*s
        
-                # Calculo de los vectores de atraccion            
-                e = x - xdes
-                P = -Kp.dot(e)
-                if dmin - dcr > d0: I = I0 - Ki.dot(e0 + dt*e)
-                else: I = I0
-                I0 = I
-                e0 = e
-                beta = 2/(1+np.exp(-np.power((dmin-dcr)/d0,2))) - 1
-                vatt = beta*(P+I)
-                vatt = (P+I)
+            # Calculo de los vectores de atraccion            
+            e = x - xdes
+            P = -Kp.dot(e)
+            if dmin - dcr > d0: I = I0 - Ki.dot(e0 + dt*e)
+            else: I = I0
+            I0 = I
+            e0 = e
+            beta = 2/(1+np.exp(-np.power((dmin-dcr)/d0,2))) - 1
+            vatt = beta*(P+I)
+            vatt = (P+I)
                 
-                # Calculo de las velocidades articulares
-                dqrep = JcpT.dot(np.linalg.inv(Jcp.dot(JcpT)+Id)).dot(vrep)
-                dqatt = JeT.dot(np.linalg.inv(Je.dot(JeT)+Id)).dot(vatt)
-                dqtotal = dqatt + dqrep
-                qtotal = q + dt*dqtotal
-                qtotal = q_lim(qtotal)             
+            # Calculo de las velocidades articulares
+            dqrep = JcpT.dot(np.linalg.inv(Jcp.dot(JcpT)+Id)).dot(vrep)
+            dqatt = JeT.dot(np.linalg.inv(Je.dot(JeT)+Id)).dot(vatt)
+            dqtotal = dqatt + dqrep
+            qtotal = q + dt*dqtotal
+            #qtotal = q_lim(qtotal)             
                 
-                q_mov = qtotal
-                dq_mov = dqtotal
-                ddq_mov = np.array([0.0]*6)             
+            q_mov = qtotal
+            dq_mov = dqtotal
+            ddq_mov = np.array([0.0]*6)             
             
             # Control del robot
-            else:
-                
-                q_mov = q_des
-                dq_mov = dq_des
-                ddq_mov = ddq_des
+        else:
+              
+            q_mov = q_des
+            dq_mov = dq_des
+            ddq_mov = ddq_des
         
         q_des = q_mov
         dq_des = dq_mov
@@ -309,7 +324,7 @@ if __name__ == '__main__':
         
         k = n + np.absolute(alpha*H.dot(-lamb.dot(de)) + alpha*b + (1-alpha)*dH.dot(dq_des-lamb.dot(e)))
         
-        u = b + H.dot(ddq_des) - H.dot(lamb).dot(de) - np.multiply(k,sat(s))
+        u = b + H.dot(ddq_des) - H.dot(lamb).dot(de) - np.multiply(k,np.tanh(s))
         
         u[0:3] = np.clip(u[0:3],-150,150)
         u[3:6] = np.clip(u[3:6],-28,28)
@@ -326,6 +341,10 @@ if __name__ == '__main__':
         robot_client.send_goal(g)
         robot_client.wait_for_result()
         
+        # Escribir datos en los archivos
+        fdatos.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+' '+str(xdes[0])+' '+str(xdes[1])+' '+str(xdes[2])+' '+str(dx[0])+' '+str(dx[1])+' '+str(dx[2])+' '+str(dmin[0])+' '+str(dcr)+' '+str(vrep1[0])+' '+str(beta[0])+' '+str(cp[0])+'\n')
+        fu.write(str(t)+' '+str(u[0])+' '+str(u[1])+' '+str(u[2])+' '+str(u[3])+' '+str(u[4])+' '+str(u[5])+'\n')
+                
         # Terminar el bucle en un tiempo de simulacion
         t = t+dt
         if t >= t_s:
@@ -334,6 +353,7 @@ if __name__ == '__main__':
     
     robot_client.cancel_goal()
     fdatos.close()
+    fu.close()
 
     
     
