@@ -94,7 +94,7 @@ if __name__ == '__main__':
         #print(p_pos1, p_pos2)
         # Definir las capsulas
         cap_person = Capsule(p_pos1, p_pos2, 0.3)
-        cap_1      = Capsule(r_pos5, r_pos6, 0.07)
+        cap_1      = Capsule(r_pos5, r_pos6, 0.1)
         cap_2      = Capsule(r_pos4, r_pos5, 0.07)
         cap_3      = Capsule(r_pos3, r_pos4, 0.07)
             

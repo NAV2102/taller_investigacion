@@ -63,10 +63,10 @@ class MinDist(object):
         r1 = self.dmin.r1
         r2 = self.dmin.r2
         cp = self.dmin.p
-        d_min = np.array(d_min)
+        d_min = np.array(d_min)[0]
         r1 = np.array(r1)
         r2 = np.array(r2)
-        cp = np.array(cp)
+        cp = np.array(cp)[0]
         #print(r1, r2)
         
         return d_min, r1, r2, cp
@@ -90,6 +90,7 @@ if __name__ == '__main__':
     ball_act = BallMarker(color['BLUE'])
     mr1 = BallMarker(color['YELLOW'], scale=0.1)
     mr2 = BallMarker(color['RED'], scale=0.1)
+    mr22 = BallMarker(color['RED'], scale=0.1)
     
     # Archivos donde se guardaran los datos
     fdatos = open("/home/nicolas/catkin_ws/src/proyecto/texto/datos.dat", "w")
@@ -119,20 +120,21 @@ if __name__ == '__main__':
     rospy.sleep(2)
     
     # Parametros de control APFM
-    dcr = 0.05
-    d1  = 1
-    cv  = 0.1
-    k1  = 0.5
-    k2  = 0.1
-    l1  = 0.02
-    l2  = 0.05
-    Kp  = 3*np.diag([3, 3, 3])
-    Ki  = 2*np.diag([1, 1, 1])
+    d_cr = 0.05
+    d_act = 0.2
+    d1  = (d_cr+d_act)/2
+    cv  = 0.0
+    k1  = 2
+    k2  = 0.05
+    l1  = d_cr + 0.03
+    l2  = d_act - 0.03
+    Kp  = 15*np.diag([1, 1, 1])
+    Ki  = 0.2*np.diag([1, 1, 1])
     I0  = np.array([0, 0, 0])
     e0  = np.array([0, 0, 0])
-    Id  = 0.5*np.eye(3)
+    Id  = 0.7*np.eye(3)
     # Se definen las ganancias del controlador
-    n     = 0.1*np.array([200.0, 100.0, 100.0, 100.0, 100.0, 1.0])
+    n     = 0.1*np.array([200.0, 200.0, 100.0, 100.0, 100.0, 1.0])
     lamb  = 10*np.diag([1.0, 1.0, 1, 1, 1, 1.0])
     alpha = 0.2
     u     = np.zeros(ndof)          # Reemplazar por la ley de control
@@ -157,7 +159,7 @@ if __name__ == '__main__':
     q  = robot.read_joint_positions()
     rbdl.CompositeRigidBodyAlgorithm(modelo,q,H0)
     
-    fdatos.write("Tiempo"+' '+"PosX"+' '+"PosY"+' '+"PosZ"+' '+ "DesX"+' '+"DesY"+' '+"DesZ"+' '+"VelX"+' '+"VelY"+' '+"VelZ"+' '+"Dmin"+' '+"Dcr"+' '+"Vrep"+' '+"Beta"+' '+"cp"+'\n')
+    fdatos.write("Tiempo"+' '+"PosX"+' '+"PosY"+' '+"PosZ"+' '+ "DesX"+' '+"DesY"+' '+"DesZ"+' '+"Dmin"+' '+"Dcr"+' '+"Vrep1"+' '+"Vrep2"+' '+"Vatt"+' '+'Vrel'+' '+"cp"+' '+"estado"+'\n')
     
     mov1_0 = 0
     dmov1_0 = 0
@@ -165,13 +167,17 @@ if __name__ == '__main__':
     dmov2_0 = 0
     r1_0 = 0
     r2_0 = 0
+    vrel = 0
+    vrep1 = 0.0
+    vrep2 = 0.0
+    vatt = np.array([0, 0, 0])
     
     while not rospy.is_shutdown():
         
         robot_client.cancel_goal()
         
         # Trayectoria predeterminada 
-        
+        """
         mov1 = -(pi/2)/(1+np.power((t-4)/2.5,10))
         dmov1 = (mov1 - mov1_0)/dt
         mov1_0 = mov1
@@ -194,7 +200,7 @@ if __name__ == '__main__':
         mov = pi/2*np.cos(pi*t/8) - pi/2  
         dmov = -np.sin(pi*t/8)*pi*pi/16 
         ddmov = -np.cos(pi*t/8)*pi*pi*pi/128
-        """
+        
         q_des = np.array([mov, -0.5, 0.8, -2.2, -1.6, 0.0])
         dq_des = np.array([dmov, 0.0, 0.0, 0.0, 0.0, 0.0])
         ddq_des = np.array([ddmov, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -203,11 +209,11 @@ if __name__ == '__main__':
         # Leer los valores de los suscriptores
         p_pos1, p_pos2 = pos_person.get_pperson()
         dmin, r1, r2, cp = mini_dist.get_rs()
-        #print("dmin: ",dmin)
-        #print("r2: ",r2)
         #r2 = np.array([0, 1, r2[2]])
-        #dmin = np.linalg.norm(r2-r1)
-        #dmin = np.array([dmin])
+        #if cp == 6 or cp == 5:
+        #    dmin = np.linalg.norm(r2-r1) - 0.1 - 0.3
+        #else:
+        #    dmin = np.linalg.norm(r2-r1) - 0.07 - 0.3
         
         q  = robot.read_joint_positions()
         dq = robot.read_joint_velocities()
@@ -224,19 +230,15 @@ if __name__ == '__main__':
         ball_act.xyz(x)
         mr1.xyz(r1)
         mr2.xyz(r2)
+        mr22.xyz(np.array([0,0.7,r2[2]]))
         
-        vrep1 = np.array([0])
-        beta = np.array([0])
-            
-        
-            
         # Cambio de estados
-        if estado == 0 and dmin-dcr <= 0.2: 
+        if estado == 0 and dmin-d_cr <= d_act: 
             estado = 1
             t_0 = t
-        elif estado == 1 and dmin-dcr > 0.2: 
+        elif estado == 1 and dmin-d_cr > d_act: 
             temp_esp = temp_esp + dt
-            if temp_esp >= 0.5:
+            if temp_esp >= 0.1:
                 estado = 0
                 temp_esp = 0
         else: estado = estado         
@@ -255,6 +257,7 @@ if __name__ == '__main__':
             dr2 = (r2-r2_0)/dt
             r2_0 = r2
             vrel = np.linalg.norm(dr2) - np.linalg.norm(dr1)
+            #print(vrel)
             if dmin <= l1: c = 1
             elif dmin >= l2: c = 0
             else: c = 0.5 + 0.5*np.cos(pi*(dmin-l1)/(l2-l1)) 
@@ -265,30 +268,36 @@ if __name__ == '__main__':
                 d0 = d1
                 vrep2 = 0
                 
-            if dmin - dcr < d0: 
-                vrep1 = k1*(d0/(dmin-dcr)-1)
-                if vrep1 >= 10: vrep1 = np.array([10])
-                if dmin <= dcr: vrep1 = np.array([10])
+            if dmin - d_cr < d0: 
+                vrep1 = k1*(d0/(dmin-d_cr)-1)
+                if vrep1 >= 10: vrep1 = 10
+                if vrep1 <= 0: vrep1 = 0
+                if dmin <= d_cr: vrep1 = 10
             else: 
                 vrep1 = 0
             vrep = vrep1 + vrep2
-            gama = 1-np.exp(-(t-t_0)/0.4)
+            gama = 1-np.exp(-(t-t_0)/0.6)
             vrep = gama*vrep
-            vrep = vrep*s
+            if vrep>=10: vrep = 10
+            Vrep = vrep*s
        
             # Calculo de los vectores de atraccion            
             e = x - xdes
             P = -Kp.dot(e)
-            if dmin - dcr > d0: I = I0 - Ki.dot(e0 + dt*e)
+            if dmin - d_cr > d0: I = I0 - Ki.dot(e0 + dt*e)
             else: I = I0
             I0 = I
             e0 = e
-            beta = 2/(1+np.exp(-np.power((dmin-dcr)/d0,2))) - 1
+            if dmin >= d_cr:
+                beta = 2/(1+np.exp(-np.power((dmin-d_cr)/d0,2))) - 1
+            else:
+                beta = 0
             vatt = beta*(P+I)
-            vatt = (P+I)
+            vatt = np.clip(vatt,0,10)
+            #vatt = (P+I)
                 
             # Calculo de las velocidades articulares
-            dqrep = JcpT.dot(np.linalg.inv(Jcp.dot(JcpT)+Id)).dot(vrep)
+            dqrep = JcpT.dot(np.linalg.inv(Jcp.dot(JcpT)+Id)).dot(Vrep)
             dqatt = JeT.dot(np.linalg.inv(Je.dot(JeT)+Id)).dot(vatt)
             dqtotal = dqatt + dqrep
             qtotal = q + dt*dqtotal
@@ -325,24 +334,24 @@ if __name__ == '__main__':
         k = n + np.absolute(alpha*H.dot(-lamb.dot(de)) + alpha*b + (1-alpha)*dH.dot(dq_des-lamb.dot(e)))
         
         u = b + H.dot(ddq_des) - H.dot(lamb).dot(de) - np.multiply(k,np.tanh(s))
-        
-        u[0:3] = np.clip(u[0:3],-150,150)
+        u[0] = np.clip(u[0],-40,40)
+        u[1:3] = np.clip(u[1:3],-150,150)
         u[3:6] = np.clip(u[3:6],-28,28)
         
         # Simulacion del robot
         robot.send_command(u)
         
         # Leer valores del simulador
-        #q  = robot.read_joint_positions()
-        #dq = robot.read_joint_velocities()
+        q  = robot.read_joint_positions()
+        dq = robot.read_joint_velocities()
         
         # Mover el robot
         g.trajectory.points = [ JointTrajectoryPoint(positions=q, velocities=dq, time_from_start=rospy.Duration(dt))]
         robot_client.send_goal(g)
         robot_client.wait_for_result()
-        
+
         # Escribir datos en los archivos
-        fdatos.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+' '+str(xdes[0])+' '+str(xdes[1])+' '+str(xdes[2])+' '+str(dx[0])+' '+str(dx[1])+' '+str(dx[2])+' '+str(dmin[0])+' '+str(dcr)+' '+str(vrep1[0])+' '+str(beta[0])+' '+str(cp[0])+'\n')
+        fdatos.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+' '+str(xdes[0])+' '+str(xdes[1])+' '+str(xdes[2])+' '+str(dmin)+' '+str(d_cr)+' '+str(vrep1)+' '+str(vrep2)+' '+str(vatt[0])+' '+str(vrel)+' '+str(cp)+' '+str(estado)+'\n')
         fu.write(str(t)+' '+str(u[0])+' '+str(u[1])+' '+str(u[2])+' '+str(u[3])+' '+str(u[4])+' '+str(u[5])+'\n')
                 
         # Terminar el bucle en un tiempo de simulacion
