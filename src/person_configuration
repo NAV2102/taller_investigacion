@@ -29,6 +29,7 @@ class Lidar(object):
         # Obtener los rangos medidos
         rangos = self.lid.ranges
         ang = np.linspace(0.0, np.pi, len(rangos)//2)
+        #ang = np.linspace(0.0, np.pi*2, len(rangos))
         lim_r  = self.lid.range_max
         rangos = np.clip(rangos,0,lim_r)
         med = rangos[len(rangos)//2:len(rangos)]

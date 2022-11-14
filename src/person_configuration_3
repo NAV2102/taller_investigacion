@@ -1,0 +1,46 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+import rospy
+import numpy as np
+from functions import *
+from proyecto.msg import PersonConfig2
+
+# Inicializar el nodo
+rospy.init_node('nodo_person_config')
+
+# Declarar del publicador
+topic = 'person_config'
+pub = rospy.Publisher(topic, PersonConfig2, queue_size=10)
+
+# Creación de una instancia (vacía) del mensaje
+person_config_msg = PersonConfig2()
+
+# Tiempo de ejecución del bucle (en Hz)
+freq = 100
+dt = 1.0/freq
+rate = rospy.Rate(freq)
+t = 0.0
+
+while not rospy.is_shutdown():
+
+    mov_x = -1.0*np.cos(np.pi*t/8.0)
+    mov_y = 1.0
+    pos_person_x = np.array([mov_x])
+    pos_person_y = np.array([mov_y])
+    #print(pos_person_x,pos_person_y)
+    #print(len(pos_person_x),len(pos_person_y))
+    #pos_person_0 = pos_person
+
+    # Asignar los valores en el mensaje
+    person_config_msg.pos_person_x = pos_person_x
+    person_config_msg.pos_person_y = pos_person_y
+    
+    t = t + dt
+    #break
+    # Publicar el mensaje
+    pub.publish(person_config_msg)
+    
+    # Esperar
+    rate.sleep()

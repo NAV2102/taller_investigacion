@@ -7,6 +7,7 @@ from functions import *
 
 from sensor_msgs.msg import JointState
 from proyecto.msg import PersonConfig
+from proyecto.msg import PersonConfig2
 from proyecto.msg import DistMin
 
 pi = np.pi
@@ -14,8 +15,8 @@ pi = np.pi
 class PosPerson(object):
     def __init__(self):
         topic    = 'person_config'
-        self.pub = rospy.Subscriber(topic, PersonConfig, self.callback)
-        self.pperson = PersonConfig()
+        self.pub = rospy.Subscriber(topic, PersonConfig2, self.callback)
+        self.pperson = PersonConfig2()
         
         # Esperar 1 segundo
         rospy.sleep(1)
@@ -26,10 +27,15 @@ class PosPerson(object):
     def get_pos_person(self):
         # Obtener la posicion de la capsula de la persona en el
         # espacio cartesiano
-        pos = self.pperson.pos_person
-        p_pos1 = np.array(pos[0:3])
-        p_pos2 = np.array(pos[3:6])
-        return p_pos1, p_pos2
+        pos_x = self.pperson.pos_person_x
+        pos_y = self.pperson.pos_person_y
+        #p_pos1 = np.array(pos[0:3])
+        #p_pos2 = np.array(pos[3:6])
+        personas = len(pos_x)
+        M_position = np.empty((personas,6)) 
+        for i in range(len(pos_x)):
+            M_position[i] = [pos_x[i], pos_y[i], -0.9, pos_x[i], pos_y[i], 0.8]
+        return M_position
 
 
 class PosRobot(object):
@@ -81,72 +87,82 @@ if __name__ == '__main__':
     pub = rospy.Publisher(topic, DistMin, queue_size=10)
     dist_min_msg = DistMin()
     
-    freq = 100
+    freq = 1000
     dt = 1.0/freq
     rate = rospy.Rate(freq)
+    
+    R1 = np.array([0, 0, 0])
+    R2 = np.array([0, 0, 0])
+    P = np.array(0)
 
     while not rospy.is_shutdown():
-        
+        D_min = np.array(100)
         # Obtener la position en el espacio cartesiano de la 
         # persona y el robot
-        p_pos1, p_pos2 = pos_person.get_pos_person()
-        r_pos1, r_pos2, r_pos3, r_pos4, r_pos5, r_pos6 = pos_robot.get_pos_robot()
+        M_position = pos_person.get_pos_person()
+        obst = len(M_position[:,0])
+        #p_pos1 = M_position[0][0:3]
+        #p_pos2 = M_position[0][3:6]
         #print(p_pos1, p_pos2)
+        r_pos1, r_pos2, r_pos3, r_pos4, r_pos5, r_pos6 = pos_robot.get_pos_robot()
+
         # Definir las capsulas
-        cap_person = Capsule(p_pos1, p_pos2, 0.3)
-        cap_1      = Capsule(r_pos5, r_pos6, 0.1)
-        cap_2      = Capsule(r_pos4, r_pos5, 0.07)
-        cap_3      = Capsule(r_pos3, r_pos4, 0.07)
+        for i in range(obst):
+            p_pos1 = M_position[i][0:3]
+            p_pos2 = M_position[i][3:6]
+           
+            cap_person = Capsule(p_pos1, p_pos2, 0.3)
+            cap_1      = Capsule(r_pos5, r_pos6, 0.1)
+            cap_2      = Capsule(r_pos4, r_pos5, 0.07)
+            cap_3      = Capsule(r_pos3, r_pos4, 0.07)
             
-        # Actualizar la posicion de las capsulas
-        cap_person.send_positions(p_pos1, p_pos2)
-        cap_1.send_positions(r_pos5, r_pos6)
-        cap_2.send_positions(r_pos4, r_pos5)
-        cap_3.send_positions(r_pos3, r_pos4)
+            # Actualizar la posicion de las capsulas
+            cap_person.send_positions(p_pos1, p_pos2)
+            cap_1.send_positions(r_pos5, r_pos6)
+            cap_2.send_positions(r_pos4, r_pos5)
+            cap_3.send_positions(r_pos3, r_pos4)
 
-        # Calcular la distancia minima entre capsulas
-        """
-        umin1, dmin1 = QR_min_dist(cap_person, cap_1)
-        umin2, dmin2 = QR_min_dist(cap_person, cap_2)
-        umin3, dmin3 = QR_min_dist(cap_person, cap_3)
-        dmin1 = np.power(dmin1,0.5)
-        dmin2 = np.power(dmin2,0.5)
-        dmin3 = np.power(dmin3,0.5)
-        """
-        umin1, dmin1, xmin1, v11, v21 = QR_min(cap_1, cap_person)
-        umin2, dmin2, xmin2, v12, v22 = QR_min(cap_2, cap_person)
-        umin3, dmin3, xmin3, v13, v23 = QR_min(cap_3, cap_person)
-        Dmin = np.array([dmin1, dmin2, dmin3])
+            # Calcular la distancia minima entre capsulas
+            umin1, dmin1, xmin1, v11, v21 = QR_min(cap_1, cap_person)
+            umin2, dmin2, xmin2, v12, v22 = QR_min(cap_2, cap_person)
+            umin3, dmin3, xmin3, v13, v23 = QR_min(cap_3, cap_person)
+            Dmin = np.array([dmin1, dmin2, dmin3])
 
-        if np.argmin(Dmin) == 0:
-            dmin = dmin1
-            r1 = v11
-            r2 = v21
-            if xmin1[1] < 0.5:
-                p = 5
+            if np.argmin(Dmin) == 0:
+                dmin = dmin1
+                r1 = v11
+                r2 = v21
+                if xmin1[1] < 0.5:
+                    p = 5
+                else:
+                    p = 6
+            elif np.argmin(Dmin) == 1:
+                dmin = dmin2
+                r1 = v12
+                r2 = v22
+                if xmin2[1] < 0.5:
+                    p = 4
+                else:
+                    p = 5
             else:
-                p = 6
-        elif np.argmin(Dmin) == 1:
-            dmin = dmin2
-            r1 = v12
-            r2 = v22
-            if xmin2[1] < 0.5:
-                p = 4
-            else:
-                p = 5
-        else:
-            dmin = dmin3
-            r1 = v13
-            r2 = v23
-            if xmin3[1] < 0.5:
-                p = 3
-            else:
-                p = 4
-        
-        dist_min_msg.min_dist = [dmin]
-        dist_min_msg.r1 = r1.tolist()
-        dist_min_msg.r2 = r2.tolist()
-        dist_min_msg.p = [p]
+                dmin = dmin3
+                r1 = v13
+                r2 = v23
+                if xmin3[1] < 0.5:
+                    p = 3
+                else:
+                    p = 4
+            
+            if dmin <= D_min:
+                D_min = dmin
+                R1 = r1
+                R2 = r2
+                P = p
+            
+        dist_min_msg.min_dist = [D_min]
+        dist_min_msg.r1 = R1.tolist()
+        dist_min_msg.r2 = R2.tolist()
+        dist_min_msg.p = [P]
         pub.publish(dist_min_msg)
         rate.sleep()
         

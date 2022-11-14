@@ -8,42 +8,21 @@ import actionlib
 import numpy as np
 from functions import *
 from markers import *
+from roslib import packages
 
 from sensor_msgs.msg import JointState
 from proyecto.msg import PersonConfig
-from proyecto.msg import PersonConfig2
 from proyecto.msg import DistMin
 from proyecto.msg import APFM
 from control_msgs.msg import *
 from trajectory_msgs.msg import *
 
+import rbdl
 pi = np.pi
 
 #----------------------------------------------
 # Definir las clases de los suscriptores
 #----------------------------------------------
-
-class PosPerson(object):
-    def __init__(self):
-        topic    = 'person_config'
-        self.sus = rospy.Subscriber(topic, PersonConfig, self.callback)
-        self.pperson = PersonConfig()
-        
-        # Esperar 1 segundo
-        rospy.sleep(1)
-        
-    def callback(self, msg):
-        self.pperson = msg
-        
-    def get_pperson(self):
-        # Obtener la posicion de la capsula de la persona en el
-        # espacio cartesiano
-        pos = self.pperson.pos_person
-        
-        p_pos1 = np.array(pos[0:3])
-        p_pos2 = np.array(pos[3:6])
-        return p_pos1, p_pos2
-
 
 class PosRobot(object):
     def __init__(self):
@@ -77,6 +56,7 @@ class PosRobot(object):
         dq[5] = dq_rob[5]
         return q, dq
 
+
 class MinDist(object):
     def __init__(self):
         topic    = 'dist_min'
@@ -109,10 +89,9 @@ if __name__ == '__main__':
     #----------------------------------------------
     
     # Inicializar el nodo
-    rospy.init_node('test_apfm_node')
+    rospy.init_node('test_apfm_smc_node')
       
     # Crear los suscriptores
-    pos_person = PosPerson()
     pos_robot  = PosRobot()
     mini_dist  = MinDist()
     
@@ -121,9 +100,16 @@ if __name__ == '__main__':
     ball_act = BallMarker(color['BLUE'])
     mr1 = BallMarker(color['YELLOW'], scale=0.1)
     mr2 = BallMarker(color['RED'], scale=0.1)
+    #mr22 = BallMarker(color['RED'], scale=0.1)
     
     # Archivos donde se guardaran los datos
     fdatos = open("/home/nicolas/catkin_ws/src/proyecto/texto/datos.dat", "w")
+    fu = open("/home/nicolas/catkin_ws/src/proyecto/texto/u.dat", "w")
+    fq = open("/home/nicolas/catkin_ws/src/proyecto/texto/qactual.dat", "w")
+    
+    # Modelo RBDL
+    modelo = rbdl.loadModel('/home/nicolas/catkin_ws/src/proyecto/urdf/ur5_robot.urdf')
+    ndof   = modelo.q_size     # Grados de libertad
     
     # Conectar con el robot
     robot_client = actionlib.SimpleActionClient('/arm_controller/follow_joint_trajectory', FollowJointTrajectoryAction)
@@ -138,6 +124,15 @@ if __name__ == '__main__':
     g.trajectory.joint_names = joint_names
     
     # Mover el robot a una posicion inicial    
+    q, dq = pos_robot.get_q()  
+    Q0 = [q[0], -pi/2, 0.0, -2.0, -1.6, 0.0]
+    g.trajectory.points = [ JointTrajectoryPoint(positions=Q0, velocities=[0]*6,time_from_start=rospy.Duration(2.0))]
+    robot_client.send_goal(g)
+    robot_client.wait_for_result()
+    Q0 = [0, -pi/2, 0.0, -2.2, -1.6, 0.0]
+    g.trajectory.points = [ JointTrajectoryPoint(positions=Q0, velocities=[0]*6,time_from_start=rospy.Duration(2.0))]
+    robot_client.send_goal(g)
+    robot_client.wait_for_result()
     Q0 = [0, -0.5, 0.8, -2.2, -1.6, 0.0]
     g.trajectory.points = [ JointTrajectoryPoint(positions=Q0, velocities=[0]*6,time_from_start=rospy.Duration(2.0))]
     robot_client.send_goal(g)
@@ -146,7 +141,7 @@ if __name__ == '__main__':
     
     # Parametros de control APFM
     d_cr = 0.05
-    d_act = 0.2
+    d_act = 0.1
     d1  = (d_cr+d_act)/2
     cv = 0.0
     k1  = 2
@@ -154,10 +149,19 @@ if __name__ == '__main__':
     l1  = d_cr + 0.03
     l2  = d_act - 0.03
     Kp  = 15*np.diag([1, 1, 1])
-    Ki  = 0.2*np.diag([1, 1, 1])
+    Ki  = 0.5*np.diag([1, 1, 1])
     I0 = np.array([0, 0, 0])
     e0 = np.array([0, 0, 0])
     Id = 0.7*np.eye(3)
+    
+    # Se definen las ganancias del controlador
+    n     = 1*np.array([25.0, 50.0, 20.0, 10.0, 14.5, 3.0])
+    lamb  = 10*np.diag([1.0, 1.0, 1, 1, 1, 1.0])
+    alpha = 0.2
+    u     = np.zeros(ndof)          # Reemplazar por la ley de control
+    b     = np.zeros(ndof)          # Para el vector de efectos no lineales
+    H     = np.zeros([ndof, ndof])  # Para la matriz de inercia
+    H0    = np.zeros([ndof, ndof])
     
     # Parametros para el cambio de control
     t_s = 8
@@ -166,12 +170,18 @@ if __name__ == '__main__':
     temp_esp = 0
     
     # Tiempo de ejecucion
-    freq = 50
+    freq = 500
     dt = 1.0/freq
     rate = rospy.Rate(freq)
     t = 0
     
-    fdatos.write("Tiempo"+' '+"PosX"+' '+"PosY"+' '+"PosZ"+' '+ "DesX"+' '+"DesY"+' '+"DesZ"+' '+"Dmin"+' '+"Dcr"+' '+"Vrep1"+' '+"Vrep2"+' '+"Vatt"+' '+'Vrel'+' '+"cp"+' '+"estado"+'\n')
+    # Simulador dinamico del robot
+    robot = Robot(np.array(Q0), np.array([0.0]*6),np.array([0.0]*6), ndof, dt)
+    q  = robot.read_joint_positions()
+    rbdl.CompositeRigidBodyAlgorithm(modelo,q,H0)
+    
+    fdatos.write("Tiempo"+' '+"PosX"+' '+"PosY"+' '+"PosZ"+' '+ "DesX"+' '+"DesY"+' '+"DesZ"+' '+"Dmin"+' '+"Dcr"+'\n')
+    fq.write("Tiempo"+' '+"q1"+' '+"q2"+' '+"q3"+' '+"q4"+' '+"q5"+' '+"q6"+' '+"dq1"+' '+"dq2"+' '+"dq3"+' '+"dq4"+' '+"dq5"+' '+"dq6"+'\n')
     
     r1_0 = 0
     r2_0 = 0
@@ -184,34 +194,32 @@ if __name__ == '__main__':
         
         robot_client.cancel_goal()
         
-        # Trayectoria predeterminada  
-        """
-        mov1 = -(pi/2)/(1+np.power((t-4)/2.5,10))
-        mov2 = (pi/2)/(1+np.power((4-t)/2.5,10))-pi   
-        if t < 4:
-            mov = mov1
-        else:
-            mov = mov2  
-        """      
-        mov = pi/2*np.cos(pi*t/t_s) - pi/2  
+        # Trayectoria predeterminada 
+
+        mov = -pi/8*t
+        dmov = -pi/8
+        ddmov = 0.0
         
         q_des = np.array([mov, -0.5, 0.8, -2.2, -1.6, 0.0])
-        xdes = ur5_fkine(q_des)[0:3,3] 
-        
-        #q_mov = q_des.tolist()
-        #dq_mov = [0]*6       
+        dq_des = np.array([dmov, 0.0, 0.0, 0.0, 0.0, 0.0])
+        ddq_des = np.array([ddmov, 0.0, 0.0, 0.0, 0.0, 0.0])
+        xdes = ur5_fkine(q_des)[0:3,3]   
                 
         # Leer los valores de los suscriptores
-        p_pos1, p_pos2 = pos_person.get_pperson()
-        q, dq = pos_robot.get_q()
+        #p_pos1, p_pos2 = pos_person.get_pperson()
         dmin, r1, r2, cp = mini_dist.get_rs()
-        #r2 = np.array([0.0, 1, r2[2]])
-        #r2[1] = r2[1]-0.5
-        #dmin = np.linalg.norm(r1-r2)
+        #r2 = np.array([0, 1, r2[2]])
+        #if cp == 6 or cp == 5:
+        #    dmin = np.linalg.norm(r2-r1) - 0.1 - 0.3
+        #else:
+        #    dmin = np.linalg.norm(r2-r1) - 0.07 - 0.3
+        
+        q  = robot.read_joint_positions()
+        dq = robot.read_joint_velocities()
 
         # No se realizará acción si no se recibe uno de
         # los mensajes
-               
+            
         x = ur5_fkine(q)[0:3,3]
         Je = jacobian(q,6)
         dx = Je.dot(dq)
@@ -221,16 +229,20 @@ if __name__ == '__main__':
         ball_act.xyz(x)
         mr1.xyz(r1)
         mr2.xyz(r2)
-                        
+        #mr22.xyz(np.array([0,0.7,r2[2]]))
+        
         # Cambio de estados
         if estado == 0 and dmin-d_cr <= d_act: 
             estado = 1
             t_0 = t
         elif estado == 1 and dmin-d_cr > d_act: 
             temp_esp = temp_esp + dt
-            if temp_esp >= 0.2:
+            if temp_esp >= 0.5:
                 estado = 0
                 temp_esp = 0
+                vatt = np.array([0, 0, 0])
+                I0  = np.array([0, 0, 0])
+                e0  = np.array([0, 0, 0])
         else: estado = estado         
             
         # Control APFM
@@ -239,14 +251,14 @@ if __name__ == '__main__':
             JeT = np.transpose(Je)
             Jcp = jacobian(q,int(cp))
             JcpT = np.transpose(Jcp)
-        
+            
             # Calculo de los vectores de repulsion            
             s = (r1 - r2)/np.linalg.norm(r1-r2)
             dr1 = (r1-r1_0)/dt
             r1_0 = r1
-            dr2 = (r2-r2_0)/dt
-            r2_0 = r2
+            dr2 =np.array([0, 0, 0])
             vrel = np.linalg.norm(dr2) - np.linalg.norm(dr1)
+            #print(vrel)
             if dmin <= l1: c = 1
             elif dmin >= l2: c = 0
             else: c = 0.5 + 0.5*np.cos(pi*(dmin-l1)/(l2-l1)) 
@@ -256,7 +268,7 @@ if __name__ == '__main__':
             else:
                 d0 = d1
                 vrep2 = 0
-            
+                
             if dmin - d_cr < d0: 
                 vrep1 = k1*(d0/(dmin-d_cr)-1)
                 if vrep1 >= 10: vrep1 = 10
@@ -266,9 +278,10 @@ if __name__ == '__main__':
                 vrep1 = 0
             vrep = vrep1 + vrep2
             gama = 1-np.exp(-(t-t_0)/0.6)
+            vrep = gama*vrep
             if vrep>=10: vrep = 10
             Vrep = vrep*s
-        
+       
             # Calculo de los vectores de atraccion            
             e = x - xdes
             P = -Kp.dot(e)
@@ -276,37 +289,71 @@ if __name__ == '__main__':
             else: I = I0
             I0 = I
             e0 = e
-            if dmin >= d_cr:
-                beta = 2/(1+np.exp(-np.power((dmin-d_cr)/d0,2))) - 1
-            else:
-                beta = 0
+            beta = 2/(1+np.exp(-np.power((dmin-d_cr)/d0,2))) - 1
             vatt = beta*(P+I)
-            vatt = np.clip(vatt,0,10)
+            vatt = np.clip(vatt,0,50)
+            #vatt = (P+I)
                 
             # Calculo de las velocidades articulares
             dqrep = JcpT.dot(np.linalg.inv(Jcp.dot(JcpT)+Id)).dot(Vrep)
             dqatt = JeT.dot(np.linalg.inv(Je.dot(JeT)+Id)).dot(vatt)
             dqtotal = dqatt + dqrep
-            qtotal = q + dt*dqtotal
+            q_const = np.diag([dt, dt*3, dt*2, dt*1, dt*1, dt*1])
+            qtotal = q + q_const.dot(dqtotal)
+            #qtotal = q + dt*dqtotal
             #qtotal = q_lim(qtotal)             
                 
-            q_mov = qtotal.tolist()
-            dq_mov = dqtotal.tolist()             
-           
-        # Control del robot
+            q_mov = qtotal
+            dq_mov = dqtotal
+            ddq_mov = np.array([0.0]*6)             
+            
+            # Control del robot
         else:
-                
-            q_mov = q_des.tolist()
-            dq_mov = [0]*6
+              
+            q_mov = q_des
+            dq_mov = dq_des
+            ddq_mov = ddq_des
+        
+        q_des = q_mov
+        dq_des = dq_mov
+        ddq_des = ddq_mov
+        
+        # Calcular el error
+        e  =  q - q_des
+        de = dq - dq_des
+        
+        # Superficie de control
+        s = de + lamb.dot(e)
+        
+        rbdl.CompositeRigidBodyAlgorithm(modelo,q,H)
+        rbdl.NonlinearEffects(modelo,q,dq,b)
+        
+        dH = (H-H0)/dt
+        H0 = H
+        
+        k = n + np.absolute(alpha*H.dot(-lamb.dot(de)) + alpha*b + (1-alpha)*dH.dot(dq_des-lamb.dot(e)))
+        
+        u = b + H.dot(ddq_des) - H.dot(lamb).dot(de) - np.multiply(k,np.tanh(s))
+        u[0:3] = np.clip(u[0:3],-150,150)
+        u[3:6] = np.clip(u[3:6],-50,50)
+        
+        # Simulacion del robot
+        robot.send_command(u)
+        
+        # Leer valores del simulador
+        q  = robot.read_joint_positions()
+        dq = robot.read_joint_velocities()
         
         # Mover el robot
-        g.trajectory.points = [ JointTrajectoryPoint(positions=q_mov, velocities=dq_mov, time_from_start=rospy.Duration(dt))]
+        g.trajectory.points = [ JointTrajectoryPoint(positions=q, velocities=dq, time_from_start=rospy.Duration(dt))]
         robot_client.send_goal(g)
         robot_client.wait_for_result()
-        
+
         # Escribir datos en los archivos
-        fdatos.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+' '+str(xdes[0])+' '+str(xdes[1])+' '+str(xdes[2])+' '+str(dmin)+' '+str(d_cr)+' '+str(vrep1)+' '+str(vrep2)+' '+str(vatt[0])+' '+str(vrel)+' '+str(cp)+' '+str(estado)+'\n')
-        
+        fdatos.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+' '+str(xdes[0])+' '+str(xdes[1])+' '+str(xdes[2])+' '+str(dmin)+' '+str(d_cr)+'\n')
+        fu.write(str(t)+' '+str(u[0])+' '+str(u[1])+' '+str(u[2])+' '+str(u[3])+' '+str(u[4])+' '+str(u[5])+'\n')
+        fq.write(str(t)+' '+str(q_mov[0])+' '+str(q_mov[1])+' '+str(q_mov[2])+' '+str(q_mov[3])+' '+str(q_mov[4])+' '+str(q_mov[5])+' '+str(dq_mov[0])+' '+str(dq_mov[1])+' '+str(dq_mov[2])+' '+str(dq_mov[3])+' '+str(dq_mov[4])+' '+str(dq_mov[5])+'\n')
+                
         # Terminar el bucle en un tiempo de simulacion
         t = t+dt
         if t >= t_s:
@@ -315,7 +362,9 @@ if __name__ == '__main__':
     
     robot_client.cancel_goal()
     fdatos.close()
-  
+    fu.close()
+    fq.close()
+
     
     
         

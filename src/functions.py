@@ -8,9 +8,10 @@ import rbdl
 
 
 class Robot(object):
-    def __init__(self, q0, dq0, ndof, dt):
+    def __init__(self, q0, dq0, ddq0, ndof, dt):
         self.q = q0    # numpy array (ndof x 1)
         self.dq = dq0  # numpy array (ndof x 1)
+        self.ddq = ddq0
         self.M = np.zeros([ndof, ndof])
         self.b = np.zeros(ndof)
         self.dt = dt
@@ -23,13 +24,18 @@ class Robot(object):
         rbdl.ForwardDynamics(self.robot, self.q, self.dq, tau, ddq)
         #ddq = np.linalg.inv(self.M).dot(tau-self.b)
         self.q = self.q + self.dt*self.dq
+        #self.q = q_lim(self.q)
         self.dq = self.dq + self.dt*ddq
+        self.ddq = ddq
 
     def read_joint_positions(self):
         return self.q
 
     def read_joint_velocities(self):
         return self.dq
+        
+    def read_joint_accelerations(self):
+        return self.ddq
            
 
 class Capsule(object):
@@ -71,7 +77,8 @@ def transform(q):
     l3 = 0.392
     l4 = 0.09475
     l5 = 0.1093
-    l6 = 0.0825
+    #l6 = 0.0825
+    l6 = 0.1625
     # Matrices DH
     T1 = dh( l1,        q[0],  0, pi/2)
     T2 = dh(  0, q[1]+2*pi/2, l2,    0)
@@ -175,49 +182,41 @@ def jacobian_ur5(q, delta=0.0001):
     return J
 
 
-def jacobian_pose(q, delta=0.0001):
+def jacobian_pose(q, delta=0.0000001):
     """
-    Jacobiano analitico para la posicion y orientacion (usando un
-    cuaternion). Retorna una matriz de 7x6 y toma como entrada el vector de
-    configuracion articular q=[q1, q2, q3, q4, q5, q6]
-
+    @info Analytic jacobian for pose (orientation represented with quaternions)
+    
+    @param q: joint position [6x1]
+    @param J: analytic jacobian [7x6]
     """
     J = np.zeros((7,6))
-    # Transformacion homogenea inicial (usando q)
-    Ti = ur5_fkine(q)
-    Qi = rot2quat(Ti[0:3,0:3])
-    # Iteracion para la derivada de cada columna
-    for i in range(6):
-        # Copiar la configuracion articular inicial
-        dq = copy(q)
-        # Incrementar la articulacion i-esima usando un delta
-        dq[i] = dq[i] + delta
-        # Transformacion homogenea luego del incremento (q+delta)
-        Tf = ur5_fkine(dq)
-        Qf = rot2quat(Tf[0:3,0:3])
-        # Aproximacion del Jacobiano de posicion usando diferencias finitas
-        J[0,i] = (Tf[0,3]-Ti[0,3])/delta
-        J[1,i] = (Tf[1,3]-Ti[1,3])/delta
-        J[2,i] = (Tf[2,3]-Ti[2,3])/delta
-        J[3,i] = (Qf[0]-Qi[0])/delta
-        J[4,i] = (Qf[1]-Qi[1])/delta
-        J[5,i] = (Qf[2]-Qi[2])/delta
-        J[6,i] = (Qf[3]-Qi[3])/delta
+    # Initial homogeneous transformation (using q)
+    T = ur5_fkine(q)
+    Q = rot2quat(T[0:3,0:3])
 
+    for i in range(6):
+        dq      = copy(q)
+        dq[i]   = dq[i] + delta
+        dT      = ur5_fkine(dq)
+        dQ      = rot2quat(dT[0:3,0:3])
+        Jpos    = (dT[0:3,3] - T[0:3,3])/delta
+        Jrot    = quatError(dQ, Q)/delta
+        J[:,i] = np.concatenate((Jpos, Jrot), axis=0)
+   
     return J
 
 
 
 def rot2quat(R):
-    """
-    Convertir una matriz de rotacion en un cuaternion
+    
+    #Convertir una matriz de rotacion en un cuaternion
 
-    Entrada:
-      R -- Matriz de rotacion
-    Salida:
-      Q -- Cuaternion [ew, ex, ey, ez]
+    #Entrada:
+    #  R -- Matriz de rotacion
+    #Salida:
+    #  Q -- Cuaternion [ew, ex, ey, ez]
 
-    """
+    
     dEpsilon = 1e-6
     quat = 4*[0.,]
 
@@ -239,26 +238,44 @@ def rot2quat(R):
     return np.array(quat)
 
 
-def quaternionMult(q1, q2):
+def quatError(Qdes, Q):
+    """
+    Compute difference between quaterions.
+    Inputs:
+    ------
+        - Qdes:     Desired quaternion
+        - Q   :     Current quaternion
+    Output:
+    -------
+        - Qe  :     Error quaternion    
+    """
+    we = Qdes[0]*Q[0] + np.dot(Qdes[1:4].transpose(),Q[1:4]) - 1
+    e  = -Qdes[0]*Q[1:4] + Q[0]*Qdes[1:4] - np.cross(np.transpose(Qdes[1:4]), np.transpose(Q[1:4]))
+    Qe = np.array([ we, e[0], e[1], e[2] ])
+
+    return Qe  
+
+
+def quatMult(q1, q2):
     quat = 4*[0.,]
-    quat[0] = -q1[1]*q2[1]-q1[2]*q2[2]-q1[3]*q2[3]+q1[0]*q2[0]
-    quat[1] =  q1[0]*q2[1]-q1[3]*q2[2]+q1[2]*q2[3]+q1[1]*q2[0]
-    quat[2] =  q1[3]*q2[1]+q1[0]*q2[2]-q1[1]*q2[3]+q1[2]*q2[0]
-    quat[3] = -q1[2]*q2[1]+q1[1]*q2[2]+q1[0]*q2[3]+q1[3]*q2[0]
+    quat[0] =  q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q2[2] - q1[3]*q2[3]
+    quat[1] = -q1[0]*q2[1] + q2[0]*q1[1] - (q1[2]*q2[3] - q1[3]*q2[2])
+    quat[2] = -q1[0]*q2[2] + q2[0]*q1[2] + (q1[1]*q2[3] - q1[3]*q2[1])
+    quat[3] = -q1[0]*q2[3] + q2[0]*q1[3] - (q1[0]*q2[2] - q1[2]*q2[1])
     return np.array(quat)
 
 
 def TF2xyzquat(T):
-    """
-    Convert a homogeneous transformation matrix into the a vector containing the
-    pose of the robot.
+    
+    #Convert a homogeneous transformation matrix into the a vector containing the
+    #pose of the robot.
 
-    Input:
-      T -- A homogeneous transformation
-    Output:
-      X -- A pose vector in the format [x y z ew ex ey ez], donde la first part
-           is Cartesian coordinates and the last part is a quaternion
-    """
+    #Input:
+    #  T -- A homogeneous transformation
+    #Output:
+    #  X -- A pose vector in the format [x y z ew ex ey ez], donde la first part
+    #       is Cartesian coordinates and the last part is a quaternion
+    
     quat = rot2quat(T[0:3,0:3])
     res = [T[0,3], T[1,3], T[2,3], quat[0], quat[1], quat[2], quat[3]]
     return np.array(res)
@@ -304,6 +321,23 @@ def lidar_filter(med, med_0, alpha = 0.1):
     return med_f
 
 
+def lidar_combination(med1, med2, ang1, ang2):
+    x1 = med1*np.cos(ang1)
+    y1 = med1*np.sin(ang1)+0.15
+    
+    x2 = med2*np.cos(ang2)
+    y2 = med2*np.sin(ang2)-0.15
+    
+    x = np.append(x1,x2)
+    y = np.append(y1,y2)
+    
+    ang = np.linspace(np.pi,-np.pi,len(y))
+    ang = np.linspace(0,2*np.pi,len(y))
+    med = np.power(x*x+y*y,0.5)
+    med = np.clip(med,0,3)
+    return med, ang
+
+
 def moving_average(a, n=3) :
     ret = np.cumsum(a, dtype=float)
     ret[n:] = ret[n:] - ret[:-n]
@@ -312,38 +346,49 @@ def moving_average(a, n=3) :
     return med_f
     
     
-def person_pos_xy(med, ang, dist_x, dist_y, dist_z):
+def person_pos_xy(med, ang, x_person_0):
     """
     Calcula la posición de la persona con respecto al robot
     """
-    TH = np.array([[1,0,0,dist_x],[0,1,0,dist_y],[0,0,1,dist_z],[0,0,0,1]]) 
-    x_person = np.array([0, 4.25, 0.3, 0, 4.25, 2])
-    
-    med = np.array(med)
-    ang = np.array(ang)
-    
-    pos,_ = find_peaks(-med,distance=17)
+    x_person = x_person_0
+
+    pos,_ = find_peaks(-med,distance=10)
     if len(pos) == 2:
         med_p = med[pos]
         ang_p = ang[pos]
     
-        r1 = med_p[0]+0.05
+        r1 = med_p[0]+0.1
         th1 = ang_p[0]
-        r2 = med_p[1]+0.05
+        r2 = med_p[1]+0.1
         th2 = ang_p[1]
     
         x1 = np.array([r1*np.cos(th1), r1*np.sin(th1), 0, 1])
-        x1 = TH.dot(x1)
         x2 = np.array([r2*np.cos(th2), r2*np.sin(th2), 0, 1])
-        x2 = TH.dot(x2)
     
         x_person = (x1+x2)/2
         x_person = np.array([x_person[0], x_person[1], x_person[2], x_person[0], x_person[1], x_person[2]+1.7])
     
-    x_person = x_person.tolist()
-    
     return x_person
+
+
+def person_position(med, ang):
+    pos,_ = find_peaks(-med,height=-2.5,distance=10)
+    med_p = med[pos] + 0.1
+    ang_p = ang[pos]
+        
+    person = len(med_p)//2
+    r = np.empty(person)
+    th = np.empty(person)
+       
+    for i in range(person):
+        r[i]  = (med_p[2*i]+med_p[2*i+1])/2
+        th[i] = (ang_p[2*i]+ang_p[2*i+1])/2
+        
+    person_x = r*np.cos(th)
+    person_y = r*np.sin(th)
     
+    return person_x, person_y
+        
     
 def sat(x):
     sat_x = x
@@ -351,23 +396,23 @@ def sat(x):
         if np.absolute(x[i]) <= 1:
             sat_x[i] = x[i]
         else:
-            sat_x[i] = np.sign(x[i])    
+            sat_x[i] = np.tanh(x[i])    
     return sat_x    
     
     
 def ley_adap(M,P,dB,alpha):
     
     dM = M
-    for i in range(7):
+    for i in range(6):
         if M[i,i] >= P[i,i]:
-            dM[i,i] = -alpha*dB[i]
+            dM[i,i] += -alpha*dB[i]
         else:
             dM[i,i] = P[i,i]
     return dM
     
     
 def q_lim(q):
-    q[0] = np.clip(q[0],-pi,0)
+    q[0] = np.clip(q[0],-pi,pi)
     q[1] = np.clip(q[1],-pi,0)
     q[2] = np.clip(q[2],0,pi/2)
     q[3] = np.clip(q[3],-5*pi/4,pi/4)

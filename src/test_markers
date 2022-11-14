@@ -8,6 +8,7 @@ from markers import *
 
 from sensor_msgs.msg import JointState
 from proyecto.msg import PersonConfig
+from proyecto.msg import PersonConfig2
 from proyecto.msg import DistMin
 
 pi = np.pi
@@ -15,7 +16,7 @@ pi = np.pi
 class PosPerson(object):
     def __init__(self):
         topic    = 'person_config'
-        self.pub = rospy.Subscriber(topic, PersonConfig, self.callback)
+        self.pub = rospy.Subscriber(topic, PersonConfig2, self.callback)
         self.pperson = PersonConfig()
         
         # Esperar 1 segundo
@@ -27,10 +28,14 @@ class PosPerson(object):
     def get_pperson(self):
         # Obtener la posicion de la capsula de la persona en el
         # espacio cartesiano
-        pos = self.pperson.pos_person
-        p_pos1 = np.array(pos[0:3])
-        p_pos2 = np.array(pos[3:6])
-        return p_pos1, p_pos2
+        pos_x = self.pperson.pos_person_x
+        pos_y = self.pperson.pos_person_y
+        personas = len(pos_x)
+        M_position = np.empty((personas,6)) 
+        for i in range(len(pos_x)):
+            M_position[i] = [pos_x[i], pos_y[i], -0.9, pos_x[i], pos_y[i], 0.8]
+        
+        return M_position
 
 
 class PosRobot(object):
@@ -86,16 +91,16 @@ if __name__ == '__main__':
     
     o1 = BallMarker(color['GREEN'])
     o2 = BallMarker(color['GREEN'])
-    o3 = BallMarker(color['GREEN'], scale = 0.13)
-    o4 = BallMarker(color['GREEN'], scale = 0.13)
-    o5 = BallMarker(color['GREEN'], scale = 0.13)
+    o3 = BallMarker(color['GREEN'])
+    o4 = BallMarker(color['GREEN'])
+    o5 = BallMarker(color['GREEN'])
     o6 = BallMarker(color['GREEN'])
     
     p1 = BallMarker(color['BLUE'])
     p2 = BallMarker(color['BLUE'])
     
     mr1 = BallMarker(color['YELLOW'], scale=0.1)
-    mr2 = BallMarker(color['RED'], scale=0.3)
+    mr2 = BallMarker(color['RED'], scale=0.2)
     
     rate = rospy.Rate(100)
 
@@ -103,7 +108,9 @@ if __name__ == '__main__':
         
         # Obtener la position en el espacio cartesiano de la 
         # persona y el robot
-        p_pos1, p_pos2 = pos_person.get_pperson()
+        M_position = pos_person.get_pperson()
+        p_pos1 = M_position[0][0:3]
+        p_pos2 = M_position[0][3:6]
         q = pos_robot.get_q()
         r1, r2 = min_dist.get_rs()
         

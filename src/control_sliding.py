@@ -14,11 +14,11 @@ pub = rospy.Publisher('joint_states', JointState, queue_size=1000)
 bmarker_actual  = BallMarker(color['RED'])
 bmarker_deseado = BallMarker(color['GREEN'])
 # Archivos donde se almacenara los datos
-fqact = open("../texto/qactual.dat", "w")
-fqdes = open("../texto/qdeseado.dat", "w")
-fxact = open("../texto/xactual.dat", "w")
-fxdes = open("../texto/xdeseado.dat", "w")
-fu    = open("../texto/u.dat", "w")
+#fqact = open("../texto/qactual.dat", "w")
+#fqdes = open("../texto/qdeseado.dat", "w")
+#fxact = open("../texto/xactual.dat", "w")
+#fxdes = open("../texto/xdeseado.dat", "w")
+#fu    = open("../texto/u.dat", "w")
 
 # Nombres de las articulaciones
 jnames = ['shoulder_pan_joint', 'shoulder_lift_joint', 'elbow_joint',
@@ -48,7 +48,7 @@ jstate.position = q
 pub.publish(jstate)
 
 # Modelo RBDL
-modelo = rbdl.loadModel('../urdf/ur5_robot2.urdf')
+modelo = rbdl.loadModel('/home/nicolas/catkin_ws/src/proyecto/urdf/ur5_robot.urdf')
 ndof   = modelo.q_size     # Grados de libertad
 
 # Frecuencia del envio (en Hz)
@@ -60,7 +60,7 @@ rate = rospy.Rate(freq)
 robot = Robot(q, dq, ndof, dt)
 
 # Se definen las ganancias del controlador
-n     = 0.1*np.array([200.0, 50.0, 10.0, 50.0, 50.0, 1.0])
+n     = 0.1*np.array([200.0, 100.0, 10.0, 50.0, 50.0, 1.0])
 lamb  = 15*np.diag([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 #n     = 0.1*np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
 #lamb  = 50*np.diag([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
@@ -94,13 +94,13 @@ while not rospy.is_shutdown():
     s = de + lamb.dot(e)
     
     # Almacenamiento de datos
-    fxact.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+'\n')
-    fxdes.write(str(t)+' '+str(xdes[0])+' '+str(xdes[1])+' '+
-                str(xdes[2])+'\n')
-    fqact.write(str(t)+' '+str(q[0])+' '+str(q[1])+' '+ str(q[2])+
-                ' '+ str(q[3])+' '+str(q[4])+' '+str(q[5])+'\n')
-    fqdes.write(str(t)+' '+str(q_des[0])+' '+str(q_des[1])+' '+ str(q_des[2])+
-                ' '+ str(q_des[3])+' '+str(q_des[4])+' '+str(q_des[5])+'\n')
+    #fxact.write(str(t)+' '+str(x[0])+' '+str(x[1])+' '+str(x[2])+'\n')
+    #fxdes.write(str(t)+' '+str(xdes[0])+' '+str(xdes[1])+' '+
+    #            str(xdes[2])+'\n')
+    #fqact.write(str(t)+' '+str(q[0])+' '+str(q[1])+' '+ str(q[2])+
+    #            ' '+ str(q[3])+' '+str(q[4])+' '+str(q[5])+'\n')
+    #fqdes.write(str(t)+' '+str(q_des[0])+' '+str(q_des[1])+' '+ str(q_des[2])+
+    #            ' '+ str(q_des[3])+' '+str(q_des[4])+' '+str(q_des[5])+'\n')
 
     # ----------------------------
     # Control dinamico (COMPLETAR)
@@ -118,8 +118,8 @@ while not rospy.is_shutdown():
     u[0:3] = np.clip(u[0:3],-150,150)
     u[3:6] = np.clip(u[3:6],-28,28)
     
-    fu.write(str(t)+' '+str(u[0])+' '+str(u[1])+' '+str(u[2])+' '+
-             str(u[3])+' '+str(u[4])+' '+str(u[5])+'\n')
+    #fu.write(str(t)+' '+str(u[0])+' '+str(u[1])+' '+str(u[2])+' '+
+    #         str(u[3])+' '+str(u[4])+' '+str(u[5])+'\n')
     
     # Simulacion del robot
     robot.send_command(u)
@@ -137,8 +137,8 @@ while not rospy.is_shutdown():
     # Esperar hasta la siguiente  iteracion
     rate.sleep()
 
-fqact.close()
-fqdes.close()
-fxact.close()
-fxdes.close()
-fu.close()
+#fqact.close()
+#fqdes.close()
+#fxact.close()
+#fxdes.close()
+#fu.close()
