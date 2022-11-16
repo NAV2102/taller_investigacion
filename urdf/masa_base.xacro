@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="https://ros.org/wiki/xacro">
+  <!-- Here we define the 2 parameters of the macro -->
+  <xacro:macro name="sphere_inertial" params="radius mass *origin">
+    <inertial>
+      <mass value="${mass}" />
+      <xacro:insert_block name="origin" />
+      <inertia ixx="${0.4 * mass * radius * radius}" ixy="${0.4 * mass * radius * radius}"
+        ixz="${0.4 * mass * radius * radius}" iyy="${0.4 * mass * radius * radius}" 
+        iyz="${0.4 * mass * radius * radius}" izz="${0.4 * mass * radius * radius}" />
+    </inertial>
+  </xacro:macro>
+  
+  <xacro:macro name="masa_base" params="prefix connected_to">
+    <!-- Create a fixed joint with a parameterized name. -->
+    <joint name="${prefix}masa_base_joint" type="fixed">
+      <!-- The parent link must be read from the robot model it is attached to. -->
+      <parent link="${connected_to}"/>
+      <child link="${prefix}masa_base"/>
+      <!-- The tool is directly attached to the flange. -->
+      <origin rpy="0 0 0" xyz="0 0 0.04"/>
+    </joint>
+    <link name="${prefix}masa_base">
+      <visual>
+        <geometry>
+          <sphere radius="0.04"/>
+        </geometry>
+      </visual>
+      <collision>
+        <geometry>
+          <sphere radius="0.04"/>
+        </geometry>
+      </collision>
+      <xacro:sphere_inertial radius="0.04" mass="0.1">
+        <origin xyz="0.0 0.0 0.0" rpy="0 0 0" />
+      </xacro:sphere_inertial>
+    </link>
+
+    <!-- TCP frame -->
+    <joint name="${prefix}tcp_joint" type="fixed">
+      <origin xyz="0 0 0.116" rpy="0 0 0"/>
+      <parent link="${prefix}masa_base"/>
+      <child link="${prefix}tcp"/>
+    </joint>
+    <link name="${prefix}tcp"/>
+
+  </xacro:macro>
+</robot>
+

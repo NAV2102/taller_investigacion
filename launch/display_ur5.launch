@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <launch>
 
-  <include file="$(find ur_description)/launch/ur5_upload.launch"/>
+  <include file="$(find proyecto)/launch/ur5_upload.launch"/>
 
  <!-- <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" /> -->
   

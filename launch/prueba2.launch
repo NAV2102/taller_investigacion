@@ -1,26 +1,28 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="limited" default="false"  doc="If true, limits joint range [-PI, PI] on all joints." />
-  <arg name="transmission_hw_interface" default="hardware_interface/PositionJointInterface" />
-  <arg name="paused" default="true" doc="Starts gazebo in paused mode" />
+  <arg name="paused" default="false" doc="Starts gazebo in paused mode" />
   <arg name="gui" default="true" doc="Starts gazebo gui" />
   
   <!-- startup simulated world -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name" default="$(find proyecto)/worlds/entorno_proyecto.world"/>
+    <arg name="world_name" default="$(find proyecto)/worlds/entorno_proyecto_2.world"/>
+    <!--<arg name="world_name" default="worlds/empty.world"/>-->
     <arg name="paused" value="$(arg paused)"/>
     <arg name="gui" value="$(arg gui)"/>
   </include>
 
-  <!--<node name="person_config_node" pkg="proyecto" type="person_configuration" args="" output="screen"/>
+  <node name="person_config_node" pkg="proyecto" type="person_configuration_2" args="" output="screen"/>
   <node name="min_dist_node" pkg="proyecto" type="min_dist" args="" output="screen"/>
-
+  
   <node name="static_transform_publisher" pkg="tf" type="static_transform_publisher" args="0 0 0 3.1416 0 0 world ns0/world 100"/>
-  <node name="static_transform_publisher2" pkg="tf" type="static_transform_publisher" args="0 -0.5 0.3 0 0 0 world base_scan 100"/>-->
-
-
+  <node name="static_transform_publisher2" pkg="tf" type="static_transform_publisher" args="0 -0.15 0.3 -1.5707 0 0 world base_scan 100"/>
+  <node name="static_transform_publisher3" pkg="tf" type="static_transform_publisher" args="0 0.15 0.3 1.5707 0 0 world base_scan_2 100"/>
+  
   <!-- send robot urdf to param server -->
-  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find proyecto)/urdf/ur5_masa.xacro' transmission_hw_interface:=$(arg transmission_hw_interface)" />
+  <include file="$(find proyecto)/launch/ur5_upload.launch">
+    <arg name="limited" value="$(arg limited)"/>
+  </include>
 
   <!-- push robot_description to factory and spawn robot in gazebo -->
   <node name="spawn_gazebo_model" pkg="gazebo_ros" type="spawn_model" args="-urdf -param robot_description -model robot -z 0.0" respawn="false" output="screen" />

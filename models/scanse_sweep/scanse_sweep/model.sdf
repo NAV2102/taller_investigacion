@@ -31,7 +31,7 @@
           <emissive>0 0 0 0</emissive>
           <shader type='pixel'/>
           <script>
-            <name>ModelPreview_7::base::base_visual_MATERIAL_</name>
+            <name>ModelPreview_4::base::base_visual_MATERIAL_</name>
             <uri>__default__</uri>
           </script>
         </material>
@@ -160,7 +160,7 @@
           <emissive>0 0 0 0</emissive>
           <shader type='pixel'/>
           <script>
-            <name>ModelPreview_7::top::top_visual_MATERIAL_</name>
+            <name>ModelPreview_4::top::top_visual_MATERIAL_</name>
             <uri>__default__</uri>
           </script>
         </material>

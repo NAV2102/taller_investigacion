@@ -51,6 +51,7 @@ add_message_files(
   FILES
   ArrayXY.msg
   PersonConfig.msg
+  PersonConfig2.msg
   DistMin.msg
   APFM.msg
 #   Message1.msg
